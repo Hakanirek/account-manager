@@ -6,6 +6,18 @@ import sqlite3
 import time
 
 
+# User credentials
+USER_CREDENTIALS = {
+    "admin": "adminpass",  # Example username and password
+    "user": "userpass"
+}
+
+def login(username, password):
+    """Simple authentication function."""
+    if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
+        return True
+    return False
+
 # Function to set up the database
 def setup_database():
     with sqlite3.connect('profiles.db', timeout=10) as conn:
@@ -115,72 +127,86 @@ if __name__ == '__main__':
     setup_database()  # Set up database if necessary
     run_streamlit()  # Start Streamlit in subprocess
 
-# Streamlit app title
-st.title("Accounting Program")
+# Streamlit sidebar title for login
+st.sidebar.title("Login")
 
-# File uploader for Excel
-uploaded_file = st.file_uploader("Upload Excel file with Date, Name, Value", type="xlsx")
+# Get username and password inputs from the sidebar
+username = st.sidebar.text_input("Username")
+password = st.sidebar.text_input("Password", type="password")
 
-if uploaded_file:
-    try:
-        # Read the uploaded Excel file
-        daily_data = pd.read_excel(uploaded_file)
-        daily_data['Date'] = pd.to_datetime(daily_data['Date'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
+# Authenticate user
+if st.sidebar.button("Login"):
+    if login(username, password):
+        st.sidebar.success("Logged in successfully!")
 
-        # Insert data without checking for duplicates
-        for index, row in daily_data.iterrows():
-            date, name, value = row['Date'], row['Name'], row['Value']
-            insert_transaction(date, name, value)
-        st.success('Data uploaded successfully')
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
+        # Streamlit app title
+        st.title("Accounting Program")
 
-# Dropdown for profile selection
-profiles = fetch_profiles()
-selected_profile = st.selectbox("Select Profile", options=profiles)
+        # File uploader for Excel
+        uploaded_file = st.file_uploader("Upload Excel file with Date, Name, Value", type="xlsx")
 
-# Calendar date input for specific date selection
-st.header("Select Date for Transactions")
-selected_date = st.date_input("Choose a date", pd.to_datetime("today").date())
+        if uploaded_file:
+            try:
+                # Read the uploaded Excel file
+                daily_data = pd.read_excel(uploaded_file)
+                daily_data['Date'] = pd.to_datetime(daily_data['Date'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
 
-# Button for "All Dates" selection
-all_dates = st.button("Show All Dates")
+                # Insert data without checking for duplicates
+                for index, row in daily_data.iterrows():
+                    date, name, value = row['Date'], row['Name'], row['Value']
+                    insert_transaction(date, name, value)
+                st.success('Data uploaded successfully')
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
 
-if selected_profile:
-    try:
-        # Fetch transactions based on whether "All Dates" is selected
-        transactions = fetch_transactions(selected_date.strftime('%Y-%m-%d'), selected_profile, all_dates)
-        df_transactions = pd.DataFrame(transactions, columns=["Date", "Name", "Value"])
-        st.subheader(
-            f"Transactions for {selected_profile} on {'All Dates' if all_dates else selected_date.strftime('%d.%m.%Y')}")
-        st.write(df_transactions)
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
+        # Dropdown for profile selection
+        profiles = fetch_profiles()
+        selected_profile = st.selectbox("Select Profile", options=profiles)
 
-# Monthly Summary
-st.header("Monthly Summary")
-current_month = selected_date.strftime('%m')
-try:
-    monthly_summary = fetch_monthly_summary(current_month, selected_profile)
-    df_monthly_summary = pd.DataFrame(monthly_summary, columns=["Name", "Total Value"])
-    st.write(df_monthly_summary)
+        # Calendar date input for specific date selection
+        st.header("Select Date for Transactions")
+        selected_date = st.date_input("Choose a date", pd.to_datetime("today").date())
 
-    # Calculate monthly total
-    monthly_total = df_monthly_summary['Total Value'].sum()
-    st.write(f"Monthly Total for {selected_profile}: {monthly_total}")
-except Exception as e:
-    st.error(f"An error occurred: {e}")
+        # Button for "All Dates" selection
+        all_dates = st.button("Show All Dates")
 
-# Yearly Summary
-st.header("Yearly Summary")
-current_year = selected_date.strftime('%Y')
-try:
-    yearly_summary = fetch_yearly_summary(current_year, selected_profile)
-    df_yearly_summary = pd.DataFrame(yearly_summary, columns=["Name", "Total Value"])
-    st.write(df_yearly_summary)
+        if selected_profile:
+            try:
+                # Fetch transactions based on whether "All Dates" is selected
+                transactions = fetch_transactions(selected_date.strftime('%Y-%m-%d'), selected_profile, all_dates)
+                df_transactions = pd.DataFrame(transactions, columns=["Date", "Name", "Value"])
+                st.subheader(
+                    f"Transactions for {selected_profile} on {'All Dates' if all_dates else selected_date.strftime('%d.%m.%Y')}")
+                st.write(df_transactions)
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
 
-    # Calculate yearly total
-    yearly_total = df_yearly_summary['Total Value'].sum()
-    st.write(f"Yearly Total for {selected_profile}: {yearly_total}")
-except Exception as e:
-    st.error(f"An error occurred: {e}")
+        # Monthly Summary
+        st.header("Monthly Summary")
+        current_month = selected_date.strftime('%m')
+        try:
+            monthly_summary = fetch_monthly_summary(current_month, selected_profile)
+            df_monthly_summary = pd.DataFrame(monthly_summary, columns=["Name", "Total Value"])
+            st.write(df_monthly_summary)
+
+            # Calculate monthly total
+            monthly_total = df_monthly_summary['Total Value'].sum()
+            st.write(f"Monthly Total for {selected_profile}: {monthly_total}")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+
+        # Yearly Summary
+        st.header("Yearly Summary")
+        current_year = selected_date.strftime('%Y')
+        try:
+            yearly_summary = fetch_yearly_summary(current_year, selected_profile)
+            df_yearly_summary = pd.DataFrame(yearly_summary, columns=["Name", "Total Value"])
+            st.write(df_yearly_summary)
+
+            # Calculate yearly total
+            yearly_total = df_yearly_summary['Total Value'].sum()
+            st.write(f"Yearly Total for {selected_profile}: {yearly_total}")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+    else:
+        st.sidebar.error("Invalid username or password.")
