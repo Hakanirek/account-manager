@@ -1,3 +1,5 @@
+import subprocess
+import sys
 import streamlit as st
 import pandas as pd
 import sqlite3
@@ -102,8 +104,16 @@ def fetch_yearly_summary(year, profile):
     return yearly_summary
 
 
-# Setting up the database
-setup_database()
+def run_streamlit():
+    # Open Streamlit app only once
+    if len(sys.argv) == 1:  # Check if script is called without additional arguments
+        subprocess.run([sys.executable, "-m", "streamlit", "run", sys.argv[0], '--server.port=8501'])
+
+
+# Main logic to run Streamlit server only once
+if __name__ == '__main__':
+    setup_database()  # Set up database if necessary
+    run_streamlit()  # Start Streamlit in subprocess
 
 # Streamlit app title
 st.title("Accounting Program")
