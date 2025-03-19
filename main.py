@@ -34,7 +34,7 @@ def setup_database():
             dolar REAL,
             euro REAL,
             zl REAL,
-            UNIQUE (date, name, dolar, euro, zl) ON CONFLICT DO NOTHING
+            UNIQUE (date, name, dolar, euro, zl)
         )
         ''')
         c.execute('''
@@ -57,8 +57,12 @@ def insert_transaction(date, name, dolar, euro, zl):
         if conn:
             try:
                 c = conn.cursor()
-                c.execute('INSERT INTO transactions (date, name, dolar, euro, zl) VALUES (%s, %s, %s, %s, %s)',
-                          (date, name, dolar, euro, zl))
+                c.execute('''
+                    INSERT INTO transactions (date, name, dolar, euro, zl) 
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (date, name, dolar, euro, zl) DO NOTHING
+                ''', (date, name, dolar, euro, zl))
+
                 c.execute('SELECT balance_dolar, balance_euro, balance_zl FROM profiles WHERE name = %s', (name,))
                 result = c.fetchone()
                 if result:
@@ -68,9 +72,8 @@ def insert_transaction(date, name, dolar, euro, zl):
                     c.execute('UPDATE profiles SET balance_dolar = %s, balance_euro = %s, balance_zl = %s WHERE name = %s',
                               (new_balance_dolar, new_balance_euro, new_balance_zl, name))
                 else:
-                    c.execute(
-                        'INSERT INTO profiles (name, balance_dolar, balance_euro, balance_zl) VALUES (%s, %s, %s, %s)',
-                        (name, dolar, euro, zl))
+                    c.execute('INSERT INTO profiles (name, balance_dolar, balance_euro, balance_zl) VALUES (%s, %s, %s, %s)',
+                              (name, dolar, euro, zl))
                 conn.commit()
                 c.close()
                 conn.close()
@@ -179,7 +182,7 @@ def run_streamlit():
 
 if __name__ == '__main__':
     setup_database()
-    # run_streamlit()
+    #run_streamlit()
 
 st.title("Accounting Program")
 
@@ -188,7 +191,7 @@ uploaded_file = st.file_uploader("Upload Excel file with Date, Name, Dolar, Euro
 if uploaded_file:
     try:
         daily_data = pd.read_excel(uploaded_file)
-        daily_data['Date'] = pd.to_datetime(daily_data['Date'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
+        daily_data['Date'] = pd.to_datetime(daily_data['Date']).dt.strftime('%Y-%m-%d')
 
         for index, row in daily_data.iterrows():
             date, name = row['Date'], row['Name']
