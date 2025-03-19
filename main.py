@@ -34,7 +34,7 @@ def setup_database():
             dolar REAL,
             euro REAL,
             zl REAL,
-            UNIQUE(date, name, dolar, euro, zl) ON CONFLICT IGNORE
+            UNIQUE (date, name, dolar, euro, zl) ON CONFLICT DO NOTHING
         )
         ''')
         c.execute('''
