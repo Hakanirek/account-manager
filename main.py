@@ -1,22 +1,32 @@
-import subprocess
-import sys
+import os
 import streamlit as st
 import pandas as pd
-import sqlite3
+import psycopg2
 import time
-import os
+import subprocess
+import sys
+
+
+# Function to get database connection using credentials from environment variables
+def get_db_connection():
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST"),
+            database=os.getenv("DB_NAME"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD")
+        )
+        return conn
+    except psycopg2.OperationalError as e:
+        st.error(f"Unable to connect to the database: {e}")
+        return None
 
 
 # Function to set up the database
 def setup_database():
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    conn = get_db_connection()
+    if conn:
         c = conn.cursor()
-
-        # Drop tables if they exist to reset the schema only when debugging
-        # c.execute('DROP TABLE IF EXISTS transactions')
-        # c.execute('DROP TABLE IF EXISTS profiles')
-
-        # Set up new tables
         c.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             date TEXT,
@@ -36,92 +46,129 @@ def setup_database():
         )
         ''')
         conn.commit()
+        c.close()
+        conn.close()
 
 
 def insert_transaction(date, name, dolar, euro, zl):
     retry_count = 5
     while retry_count > 0:
-        try:
-            with sqlite3.connect('profiles.db', timeout=10) as conn:
+        conn = get_db_connection()
+        if conn:
+            try:
                 c = conn.cursor()
-                c.execute('INSERT INTO transactions (date, name, dolar, euro, zl) VALUES (?, ?, ?, ?, ?)',
+                c.execute('INSERT INTO transactions (date, name, dolar, euro, zl) VALUES (%s, %s, %s, %s, %s)',
                           (date, name, dolar, euro, zl))
-                c.execute('SELECT balance_dolar, balance_euro, balance_zl FROM profiles WHERE name = ?', (name,))
+                c.execute('SELECT balance_dolar, balance_euro, balance_zl FROM profiles WHERE name = %s', (name,))
                 result = c.fetchone()
                 if result:
                     new_balance_dolar = result[0] + dolar
                     new_balance_euro = result[1] + euro
                     new_balance_zl = result[2] + zl
-                    c.execute('UPDATE profiles SET balance_dolar = ?, balance_euro = ?, balance_zl = ? WHERE name = ?',
+                    c.execute('UPDATE profiles SET balance_dolar = %s, balance_euro = %s, balance_zl = %s WHERE name = %s',
                               (new_balance_dolar, new_balance_euro, new_balance_zl, name))
                 else:
                     c.execute(
-                        'INSERT INTO profiles (name, balance_dolar, balance_euro, balance_zl) VALUES (?, ?, ?, ?)',
+                        'INSERT INTO profiles (name, balance_dolar, balance_euro, balance_zl) VALUES (%s, %s, %s, %s)',
                         (name, dolar, euro, zl))
                 conn.commit()
-            break
-        except sqlite3.OperationalError as e:
-            if 'database is locked' in str(e):
+                c.close()
+                conn.close()
+                break
+            except psycopg2.OperationalError as e:
+                st.error(f"An error occurred: {e}")
                 retry_count -= 1
                 time.sleep(1)
-            else:
-                st.error(f"An error occurred: {e}")
-                break
+            finally:
+                if conn:
+                    conn.close()
 
 
 def fetch_profiles():
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        c.execute('SELECT name FROM profiles')
-        profiles = c.fetchall()
+    conn = get_db_connection()
+    profiles = []
+    if conn:
+        try:
+            c = conn.cursor()
+            c.execute('SELECT name FROM profiles')
+            profiles = c.fetchall()
+            c.close()
+        except psycopg2.Error as e:
+            st.error(f"An error occurred while fetching profiles: {e}")
+        finally:
+            conn.close()
     return ['All Profiles'] + [profile[0] for profile in profiles]
 
 
 def fetch_transactions(date, profile, all_dates):
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        if all_dates:
-            if profile == 'All Profiles':
-                c.execute('SELECT date, name, dolar, euro, zl FROM transactions')
+    conn = get_db_connection()
+    transactions = []
+    if conn:
+        try:
+            c = conn.cursor()
+            if all_dates:
+                if profile == 'All Profiles':
+                    c.execute('SELECT date, name, dolar, euro, zl FROM transactions')
+                else:
+                    c.execute('SELECT date, name, dolar, euro, zl FROM transactions WHERE name = %s', (profile,))
             else:
-                c.execute('SELECT date, name, dolar, euro, zl FROM transactions WHERE name = ?', (profile,))
-        else:
-            if profile == 'All Profiles':
-                c.execute('SELECT date, name, dolar, euro, zl FROM transactions WHERE date = ?', (date,))
-            else:
-                c.execute('SELECT date, name, dolar, euro, zl FROM transactions WHERE date = ? AND name = ?',
-                          (date, profile))
-        transactions = c.fetchall()
+                if profile == 'All Profiles':
+                    c.execute('SELECT date, name, dolar, euro, zl FROM transactions WHERE date = %s', (date,))
+                else:
+                    c.execute('SELECT date, name, dolar, euro, zl FROM transactions WHERE date = %s AND name = %s',
+                              (date, profile))
+            transactions = c.fetchall()
+            c.close()
+        except psycopg2.Error as e:
+            st.error(f"An error occurred while fetching transactions: {e}")
+        finally:
+            conn.close()
     return transactions
 
 
 def fetch_monthly_summary(month, profile):
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        if profile == 'All Profiles':
-            c.execute(
-                'SELECT name, SUM(dolar) as total_dolar, SUM(euro) as total_euro, SUM(zl) as total_zl FROM transactions WHERE strftime("%m", date) = ? GROUP BY name',
-                (month,))
-        else:
-            c.execute(
-                'SELECT name, SUM(dolar) as total_dolar, SUM(euro) as total_euro, SUM(zl) as total_zl FROM transactions WHERE strftime("%m", date) = ? AND name = ? GROUP BY name',
-                (month, profile))
-        monthly_summary = c.fetchall()
+    conn = get_db_connection()
+    monthly_summary = []
+    if conn:
+        try:
+            c = conn.cursor()
+            if profile == 'All Profiles':
+                c.execute(
+                    'SELECT name, SUM(dolar) as total_dolar, SUM(euro) as total_euro, SUM(zl) as total_zl FROM transactions WHERE EXTRACT(MONTH FROM date::DATE) = %s GROUP BY name',
+                    (month,))
+            else:
+                c.execute(
+                    'SELECT name, SUM(dolar) as total_dolar, SUM(euro) as total_euro, SUM(zl) as total_zl FROM transactions WHERE EXTRACT(MONTH FROM date::DATE) = %s AND name = %s GROUP BY name',
+                    (month, profile))
+            monthly_summary = c.fetchall()
+            c.close()
+        except psycopg2.Error as e:
+            st.error(f"An error occurred while fetching monthly summary: {e}")
+        finally:
+            conn.close()
     return monthly_summary
 
 
 def fetch_yearly_summary(year, profile):
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        if profile == 'All Profiles':
-            c.execute(
-                'SELECT name, SUM(dolar) as total_dolar, SUM(euro) as total_euro, SUM(zl) as total_zl FROM transactions WHERE strftime("%Y", date) = ? GROUP BY name',
-                (year,))
-        else:
-            c.execute(
-                'SELECT name, SUM(dolar) as total_dolar, SUM(euro) as total_euro, SUM(zl) as total_zl FROM transactions WHERE strftime("%Y", date) = ? AND name = ? GROUP BY name',
-                (year, profile))
-        yearly_summary = c.fetchall()
+    conn = get_db_connection()
+    yearly_summary = []
+    if conn:
+        try:
+            c = conn.cursor()
+            if profile == 'All Profiles':
+                c.execute(
+                    'SELECT name, SUM(dolar) as total_dolar, SUM(euro) as total_euro, SUM(zl) as total_zl FROM transactions WHERE EXTRACT(YEAR FROM date::DATE) = %s GROUP BY name',
+                    (year,))
+            else:
+                c.execute(
+                    'SELECT name, SUM(dolar) as total_dolar, SUM(euro) as total_euro, SUM(zl) as total_zl FROM transactions WHERE EXTRACT(YEAR FROM date::DATE) = %s AND name = %s GROUP BY name',
+                    (year, profile))
+            yearly_summary = c.fetchall()
+            c.close()
+        except psycopg2.Error as e:
+            st.error(f"An error occurred while fetching yearly summary: {e}")
+        finally:
+            conn.close()
     return yearly_summary
 
 
@@ -132,7 +179,7 @@ def run_streamlit():
 
 if __name__ == '__main__':
     setup_database()
-    run_streamlit()
+    # run_streamlit()
 
 st.title("Accounting Program")
 
