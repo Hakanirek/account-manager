@@ -8,8 +8,8 @@ import os
 
  
  # Function to get database connection using credentials from environment variables
- def get_db_connection():
-     try:
+def get_db_connection():
+  try:
          conn = psycopg2.connect(
              host=os.getenv("DB_HOST"),
              database=os.getenv("DB_NAME"),
@@ -20,6 +20,7 @@ import os
      except psycopg2.OperationalError as e:
          st.error(f"Unable to connect to the database: {e}")
          return None
+    
          
 
 # Setup the SQLite Database
