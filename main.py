@@ -25,10 +25,10 @@ def setup_database():
         c.execute('''
         CREATE TABLE IF NOT EXISTS profiles (
             name TEXT PRIMARY KEY,
-            balance_dolar REAL,
-            balance_euro REAL,
-            balance_zl REAL,
-            balance_tl REAL
+            balance_dolar REAL DEFAULT 0,
+            balance_euro REAL DEFAULT 0,
+            balance_zl REAL DEFAULT 0,
+            balance_tl REAL DEFAULT 0
         )
         ''')
 
@@ -54,10 +54,15 @@ def insert_transaction(date, name, dolar, euro, zl, tl):
                 c.execute('SELECT balance_dolar, balance_euro, balance_zl, balance_tl FROM profiles WHERE name = ?', (name,))
                 result = c.fetchone()
                 if result:
-                    new_balance_dolar = result[0] + dolar
-                    new_balance_euro = result[1] + euro
-                    new_balance_zl = result[2] + zl
-                    new_balance_tl = result[3] + tl
+                    balance_dolar = result[0]
+                    balance_euro = result[1]
+                    balance_zl = result[2]
+                    balance_tl = result[3]
+
+                    new_balance_dolar = balance_dolar + dolar
+                    new_balance_euro = balance_euro + euro
+                    new_balance_zl = balance_zl + zl
+                    new_balance_tl = balance_tl + tl
                     c.execute('UPDATE profiles SET balance_dolar = ?, balance_euro = ?, balance_zl = ?, balance_tl = ? WHERE name = ?',
                               (new_balance_dolar, new_balance_euro, new_balance_zl, new_balance_tl, name))
                 else:
@@ -157,7 +162,10 @@ def show_accounting_page():
 
             for index, row in daily_data.iterrows():
                 date, name = row['Date'], row['Name']
-                dolar, euro, zl, tl = row['Dolar'], row['Euro'], row['ZL'], row['T.L']
+                dolar = row['Dolar'] if not pd.isna(row['Dolar']) else 0
+                euro = row['Euro'] if not pd.isna(row['Euro']) else 0
+                zl = row['ZL'] if 'ZL' in row and not pd.isna(row['ZL']) else 0
+                tl = row['T.L'] if 'T.L' in row and not pd.isna(row['T.L']) else 0
                 insert_transaction(date, name, dolar, euro, zl, tl)
             st.success('Data uploaded successfully')
         except Exception as e:
