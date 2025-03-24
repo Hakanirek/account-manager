@@ -17,9 +17,10 @@ def get_db_connection():
              password=os.getenv("DB_PASSWORD")
          )
          return conn
-     except psycopg2.OperationalError as e:
+   except psycopg2.OperationalError as e:
          st.error(f"Unable to connect to the database: {e}")
          return None
+     
     
          
 
