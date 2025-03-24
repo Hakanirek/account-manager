@@ -4,6 +4,23 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import time
+import os
+
+ 
+ # Function to get database connection using credentials from environment variables
+ def get_db_connection():
+     try:
+         conn = psycopg2.connect(
+             host=os.getenv("DB_HOST"),
+             database=os.getenv("DB_NAME"),
+             user=os.getenv("DB_USER"),
+             password=os.getenv("DB_PASSWORD")
+         )
+         return conn
+     except psycopg2.OperationalError as e:
+         st.error(f"Unable to connect to the database: {e}")
+         return None
+         
 
 # Setup the SQLite Database
 def setup_database():
