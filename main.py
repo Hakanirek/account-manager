@@ -19,7 +19,12 @@ def get_db_connection():
         st.error(f"Unable to connect to the database: {e}")
         return None
 
-    
+
+
+# Initialize session state for filter option
+if 'filter_option' not in st.session_state:
+    st.session_state['filter_option'] = None
+
 # Setup the SQLite Database
 def setup_database():
     with sqlite3.connect('profiles.db', timeout=10) as conn:
@@ -69,11 +74,14 @@ def setup_database():
             tir_plaka TEXT,
             hamal REAL,
             arac_masrafi REAL,
-            gumruk REAL,
+            suat REAL,
             komsu REAL,
             sofor_ve_eks REAL,
             indirme_pln REAL,
             kap_m TEXT,
+            ek_masraf REAL,
+            kapı_m TEXT,
+            islem_maliyeti REAL,
             toplam_y REAL
         )
         ''')
@@ -135,14 +143,31 @@ def insert_transfer(date, name, transfer_amount, commission):
         conn.commit()
 
 
-def insert_outcome(date, arac, tir_plaka, hamal, arac_masrafi, gumruk, komsu, sofor_ve_eks, indirme_pln, kap_m,
-                   toplam_y):
+def insert_outcome(date, arac, tir_plaka, hamal, arac_masrafi, suat, komsu, sofor_ve_eks, indirme_pln, kap_m, ek_masraf,
+                   kapı_m, islem_maliyeti, toplam_y):
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
+
         c.execute(
-            'INSERT INTO outcomes (date, arac, tir_plaka, hamal, arac_masrafi, gumruk, komsu, sofor_ve_eks, indirme_pln, kap_m, toplam_y) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (date, arac, tir_plaka, hamal, arac_masrafi, gumruk, komsu, sofor_ve_eks, indirme_pln, kap_m, toplam_y))
-        conn.commit()
+            '''
+            SELECT COUNT(*) FROM outcomes 
+            WHERE date=? AND arac=? AND tir_plaka=? AND hamal=? AND arac_masrafi=? AND suat=? 
+            AND komsu=? AND sofor_ve_eks=? AND indirme_pln=? AND kap_m=? AND ek_masraf=? AND kapı_m=? AND islem_maliyeti=? AND toplam_y=?
+            ''',
+            (date, arac, tir_plaka, hamal, arac_masrafi, suat, komsu, sofor_ve_eks, indirme_pln, kap_m, ek_masraf,
+             kapı_m, islem_maliyeti, toplam_y))
+
+        count = c.fetchone()[0]
+
+        if count == 0:
+            c.execute(
+                '''
+                INSERT INTO outcomes (date, arac, tir_plaka, hamal, arac_masrafi, suat, komsu, sofor_ve_eks, indirme_pln, kap_m, ek_masraf, kapı_m, islem_maliyeti, toplam_y) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (date, arac, tir_plaka, hamal, arac_masrafi, suat, komsu, sofor_ve_eks, indirme_pln, kap_m, ek_masraf,
+                 kapı_m, islem_maliyeti, toplam_y))
+            conn.commit()
 
 
 def fetch_profiles():
@@ -165,12 +190,13 @@ def fetch_transactions(date, profile, all_dates):
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         sql = '''
-            SELECT date, name,
+            SELECT id, date, name,
                 ROUND(SUM(unit_kg), 2) as unit_kg, ROUND(SUM(price), 2) as price,
                 ROUND(SUM(dolar), 2) as dolar, ROUND(SUM(euro), 2) as euro, ROUND(SUM(zl), 2) as zl, ROUND(SUM(tl), 2) as tl,
                 TRIM(GROUP_CONCAT(DISTINCT vehicle), ', ') as vehicle, TRIM(GROUP_CONCAT(DISTINCT kap_number), ', ') as kap_number
             FROM transactions
         '''
+
 
         if all_dates:
             if profile == 'All Profiles':
@@ -204,35 +230,26 @@ def fetch_outcomes(date, vehicle, all_dates):
         c = conn.cursor()
 
         sql = '''
-            SELECT date, arac, tir_plaka,
-                SUM(hamal) as total_hamal,
-                SUM(arac_masrafi) as total_arac_masrafi,
-                SUM(gumruk) as total_gumruk,
-                SUM(komsu) as total_komsu,
-                SUM(sofor_ve_eks) as total_sofor_ve_eks,
-                SUM(indirme_pln) as total_indirme_pln,
-                kap_m,
-                SUM(toplam_y) as total_toplam_y
+            SELECT DISTINCT id, date, arac, tir_plaka,
+               hamal, arac_masrafi, suat, komsu, sofor_ve_eks, indirme_pln, kap_m, ek_masraf, kapı_m, islem_maliyeti, toplam_y
             FROM outcomes
         '''
 
         if all_dates:
             if vehicle != 'All Vehicles':
-                sql += ' WHERE arac = ? GROUP BY date, arac, tir_plaka, kap_m'
+                sql += ' WHERE arac = ?'
                 c.execute(sql, (vehicle,))
             else:
-                sql += ' GROUP BY date, arac, tir_plaka, kap_m'
                 c.execute(sql)
         else:
             if vehicle != 'All Vehicles':
-                sql += ' WHERE date = ? AND arac = ? GROUP BY date, arac, tir_plaka, kap_m'
+                sql += ' WHERE date = ? AND arac = ?'
                 c.execute(sql, (date, vehicle))
             else:
-                sql += ' WHERE date = ? GROUP BY date, arac, tir_plaka, kap_m'
+                sql += ' WHERE date = ?'
                 c.execute(sql, (date,))
 
         outcomes = c.fetchall()
-
     return outcomes
 
 
@@ -281,14 +298,30 @@ def fetch_yearly_summary(year, profile):
 def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl):
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
+        # First, update the balances for the profile
+        c.execute('SELECT balance_dolar, balance_euro, balance_zl, balance_tl FROM profiles WHERE name = ?', (name,))
+        result = c.fetchone()
+        if result:
+            # Get the old values
+            c.execute('SELECT dolar, euro, zl, tl FROM transactions WHERE id = ?', (transaction_id,))
+            old_values = c.fetchone()
+            if old_values:
+                old_dolar, old_euro, old_zl, old_tl = old_values
+                # Update the balances by subtracting old values and adding new ones
+                new_balance_dolar = (result[0] or 0) - old_dolar + dolar
+                new_balance_euro = (result[1] or 0) - old_euro + euro
+                new_balance_zl = (result[2] or 0) - old_zl + zl
+                new_balance_tl = (result[3] or 0) - old_tl + tl
+                c.execute(
+                    'UPDATE profiles SET balance_dolar = ?, balance_euro = ?, balance_zl = ?, balance_tl = ? WHERE name = ?',
+                    (new_balance_dolar, new_balance_euro, new_balance_zl, new_balance_tl, name))
+
+        # Then update the transaction
         c.execute('''
-        DELETE FROM transactions
+        UPDATE transactions
+        SET date = ?, name = ?, vehicle = ?, kap_number = ?, unit_kg = ?, price = ?, dolar = ?, euro = ?, zl = ?, tl = ?
         WHERE id = ?
-        ''', (transaction_id,))
-        c.execute('''
-        INSERT INTO transactions (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl))
+        ''', (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, transaction_id))
         conn.commit()
 
 
@@ -296,29 +329,24 @@ def update_transfer(transfer_id, date, name, transfer_amount, commission):
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         c.execute('''
-        DELETE FROM transfers
+        UPDATE transfers
+        SET date = ?, name = ?, transfer_amount = ?, commission = ?
         WHERE id = ?
-        ''', (transfer_id,))
-        c.execute('''
-        INSERT INTO transfers (date, name, transfer_amount, commission)
-        VALUES (?, ?, ?, ?)
-        ''', (date, name, transfer_amount, commission))
+        ''', (date, name, transfer_amount, commission, transfer_id))
         conn.commit()
 
 
-def update_outcome(outcome_id, date, arac, tir_plaka, hamal, arac_masrafi, gumruk, komsu, sofor_ve_eks, indirme_pln,
-                   kap_m, toplam_y):
+def update_outcome(outcome_id, date, arac, tir_plaka, hamal, arac_masrafi, suat, komsu, sofor_ve_eks, indirme_pln,
+                   kap_m, ek_masraf, kapı_m, islem_maliyeti, toplam_y):
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         c.execute('''
-        DELETE FROM outcomes
+        UPDATE outcomes
+        SET date = ?, arac = ?, tir_plaka = ?, hamal = ?, arac_masrafi = ?, suat = ?, komsu = ?, sofor_ve_eks = ?, indirme_pln = ?, kap_m = ?, ek_masraf = ?, kapı_m = ?, islem_maliyeti = ?, toplam_y = ?
         WHERE id = ?
-        ''', (outcome_id,))
-        c.execute('''
-        INSERT INTO outcomes (date, arac, tir_plaka, hamal, arac_masrafi, gumruk, komsu, sofor_ve_eks, indirme_pln, kap_m, toplam_y)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (date, arac, tir_plaka, hamal, arac_masrafi, gumruk, komsu, sofor_ve_eks, indirme_pln, kap_m, toplam_y))
+        ''', (date, arac, tir_plaka, hamal, arac_masrafi, suat, komsu, sofor_ve_eks, indirme_pln, kap_m, ek_masraf, kapı_m, islem_maliyeti, toplam_y, outcome_id))
         conn.commit()
+
 
 # Setup the application pages
 def show_accounting_page():
@@ -380,14 +408,17 @@ def show_accounting_page():
                     tir_plaka = row['Tır Plaka']
                     hamal = row.get('Hamal', 0) if not pd.isna(row.get('Hamal', 0)) else 0
                     arac_masrafi = row.get('Araç Masrafı', 0) if not pd.isna(row.get('Araç Masrafı', 0)) else 0
-                    gumruk = row.get('Gümrük', 0) if not pd.isna(row.get('Gümrük', 0)) else 0
+                    suat = row.get('Suat', 0) if not pd.isna(row.get('Suat', 0)) else 0
                     komsu = row.get('KOMŞU', 0) if not pd.isna(row.get('KOMŞU', 0)) else 0
                     sofor_ve_eks = row.get('ŞOFÖR VE EKS.', 0) if not pd.isna(row.get('ŞOFÖR VE EKS.', 0)) else 0
                     indirme_pln = row.get('İNDİRME PLN.', 0) if not pd.isna(row.get('İNDİRME PLN.', 0)) else 0
                     kap_m = row.get('KAP M.', '')
+                    ek_masraf = row.get('EK MASRAF', 0) if not pd.isna(row.get('EK MASRAF', 0)) else 0
+                    kapı_m = row.get('Kapı M.', '')
+                    islem_maliyeti = row.get('İşlem_Maliyeti', 0) if not pd.isna(row.get('İşlem Maliyeti', 0)) else 0
                     toplam_y = row.get('Toplam Y', 0) if not pd.isna(row.get('Toplam Y', 0)) else 0
-                    insert_outcome(date, arac, tir_plaka, hamal, arac_masrafi, gumruk, komsu, sofor_ve_eks, indirme_pln,
-                                   kap_m, toplam_y)
+                    insert_outcome(date, arac, tir_plaka, hamal, arac_masrafi, suat, komsu, sofor_ve_eks, indirme_pln,
+                                   kap_m, ek_masraf, kapı_m, islem_maliyeti, toplam_y)
                 st.success('Outcome data uploaded successfully')
 
         except Exception as e:
@@ -405,23 +436,22 @@ def show_accounting_page():
         try:
             transactions = fetch_transactions(selected_date.strftime('%Y-%m-%d'), selected_profile, all_dates)
             df_transactions = pd.DataFrame(transactions,
-                                           columns=["Date", "Name", "Unit-Kg", "Price", "Dolar", "Euro", "ZL", "T.L",
+                                           columns=["ID", "Date", "Name", "Unit-Kg", "Price", "Dolar", "Euro", "ZL",
+                                                    "T.L",
                                                     "Vehicle", "Kap-Number"])
             st.subheader(
                 f"Transactions for {selected_profile} on {'All Dates' if all_dates else selected_date.strftime('%d.%m.%Y')}")
             st.write(df_transactions)
 
-            # Calculate transaction total for all dates or specific date
+            # Calculate total for transactions
             transaction_total_dolar = round(df_transactions['Dolar'].sum(), 2)
             transaction_total_euro = round(df_transactions['Euro'].sum(), 2)
             transaction_total_zl = round(df_transactions['ZL'].sum(), 2)
             transaction_total_tl = round(df_transactions['T.L'].sum(), 2)
             transaction_total_kg = round(df_transactions['Unit-Kg'].sum(), 2)
 
-            # Show transaction total for all profiles under the transactions table
             st.write(
-                f"Transaction Total for {'All Profiles' if selected_profile == 'All Profiles' else selected_profile}: Dolar: {transaction_total_dolar}, Euro: {transaction_total_euro}, ZL: {transaction_total_zl}, T.L: {transaction_total_tl}, KG: {transaction_total_kg}")
-
+                f"Total Transactions: Dolar: {transaction_total_dolar}, Euro: {transaction_total_euro}, ZL: {transaction_total_zl}, T.L: {transaction_total_tl}, KG: {transaction_total_kg}")
         except Exception as e:
             st.error(f"An error occurred: {e}")
 
@@ -433,11 +463,36 @@ def show_accounting_page():
         selected_date_str = selected_date.strftime('%Y-%m-%d')
         outcomes = fetch_outcomes(selected_date_str, selected_vehicle, all_dates)
         df_outcomes = pd.DataFrame(outcomes,
-                                   columns=["Date", "Araç", "Tır Plaka",
-                                            "Total Hamal", "Total Araç Masrafı", "Total Gümrük",
+                                   columns=["ID", "Date", "Araç", "Tır Plaka",
+                                            "Total Hamal", "Total Araç Masrafı", "Total Suat",
                                             "Total KOMŞU", "Total ŞOFÖR VE EKS.", "Total İNDİRME PLN.",
-                                            "KAP M.", "Total Toplam Y"])
+                                            "KAP M.", "EK MASRAF", "Kapı M.", "İşlem Maliyeti", "Total Toplam Y"])
+
+        # Select a column to filter with session state to prevent refreshing
+        filter_columns = [
+            "Total Hamal", "Total Araç Masrafı", "Total Suat", "Total KOMŞU",
+            "İşlem Maliyeti", "Total ŞOFÖR VE EKS.", "Kapı M.", "Total İNDİRME PLN.",
+            "KAPI M.", "EK MASRAF", "Açıklama", "Total Toplam Y"
+        ]
+        st.session_state.filter_option = st.selectbox("Select a column to filter", options=filter_columns, index=filter_columns.index(st.session_state.filter_option) if st.session_state['filter_option'] else 0)
+
+        # Display the outcomes table
         st.write(df_outcomes)
+
+        filter_option = st.session_state.filter_option
+        # Calculate the number of occurrences and sum for the selected column if it's numeric
+        if filter_option in df_outcomes.select_dtypes(include='number').columns:
+            occurrences = df_outcomes[filter_option].count()
+            total_value = df_outcomes[filter_option].sum()
+
+            # Display the calculated values
+            st.write(f"Occurrences of {filter_option}: {occurrences}")
+            st.write(f"Total {filter_option}: {total_value:.2f}")
+        else:
+            # For non-numeric columns, just display occurrences
+            occurrences = df_outcomes[filter_option].value_counts().sum()
+            st.write(f"Occurrences of {filter_option}: {occurrences}")
+
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
@@ -450,12 +505,11 @@ def show_accounting_page():
                                                    "Total Unit-Kg", "Total Price"])
         st.write(df_monthly_summary)
 
-        monthly_total_dolar = round(df_monthly_summary['Total Dolar'].sum(),2)
-        monthly_total_euro = round(df_monthly_summary['Total Euro'].sum(),2)
-        monthly_total_zl = round(df_monthly_summary['Total ZL'].sum(),2)
-        monthly_total_tl = round(df_monthly_summary['Total T.L'].sum(),2)
-        monthly_total_kg = round(df_monthly_summary['Total Unit-Kg'].sum(),2)
-
+        monthly_total_dolar = round(df_monthly_summary['Total Dolar'].sum(), 2)
+        monthly_total_euro = round(df_monthly_summary['Total Euro'].sum(), 2)
+        monthly_total_zl = round(df_monthly_summary['Total ZL'].sum(), 2)
+        monthly_total_tl = round(df_monthly_summary['Total T.L'].sum(), 2)
+        monthly_total_kg = round(df_monthly_summary['Total Unit-Kg'].sum(), 2)
 
         st.write(
             f"Monthly Total for {selected_profile}: Dolar: {monthly_total_dolar}, Euro: {monthly_total_euro}, ZL: {monthly_total_zl}, T.L: {monthly_total_tl}, KG: {monthly_total_kg}", )
@@ -471,11 +525,11 @@ def show_accounting_page():
                                                   "Total Unit-Kg", "Total Price"])
         st.write(df_yearly_summary)
 
-        yearly_total_dolar = round(df_yearly_summary['Total Dolar'].sum(),2)
-        yearly_total_euro = round(df_yearly_summary['Total Euro'].sum(),2)
-        yearly_total_zl = round(df_yearly_summary['Total ZL'].sum(),2)
-        yearly_total_tl = round(df_yearly_summary['Total T.L'].sum(),2)
-        yearly_total_kg = round(df_yearly_summary['Total Unit-Kg'].sum(),2)
+        yearly_total_dolar = round(df_yearly_summary['Total Dolar'].sum(), 2)
+        yearly_total_euro = round(df_yearly_summary['Total Euro'].sum(), 2)
+        yearly_total_zl = round(df_yearly_summary['Total ZL'].sum(), 2)
+        yearly_total_tl = round(df_yearly_summary['Total T.L'].sum(), 2)
+        yearly_total_kg = round(df_yearly_summary['Total Unit-Kg'].sum(), 2)
         st.write(
             f"Yearly Total for {selected_profile}: Dolar: {yearly_total_dolar}, Euro: {yearly_total_euro}, ZL: {yearly_total_zl}, T.L: {yearly_total_tl}, KG: {yearly_total_kg}")
     except Exception as e:
@@ -540,12 +594,13 @@ def show_edit_page():
     if edit_option == "Transactions":
         transactions = fetch_transactions(datetime.now().strftime('%Y-%m-%d'), 'All Profiles', True)
         df_transactions = pd.DataFrame(transactions,
-                                       columns=["Date", "Name", "Unit-Kg", "Price", "Dolar", "Euro", "ZL", "T.L", "Vehicle", "Kap-Number"])
+                                       columns=["ID", "Date", "Name", "Unit-Kg", "Price", "Dolar", "Euro", "ZL", "T.L",
+                                                "Vehicle", "Kap-Number"])
         st.dataframe(df_transactions)
 
         if not df_transactions.empty:
-            row_index = st.selectbox("Select Row ID to Edit", df_transactions.index.tolist())
-            transaction_row = df_transactions.loc[row_index]
+            transaction_id = st.selectbox("Select Transaction ID to Edit", df_transactions['ID'].tolist())
+            transaction_row = df_transactions[df_transactions['ID'] == transaction_id].iloc[0]
 
             with st.form("edit_transaction_form"):
                 date = st.date_input("Date", value=pd.to_datetime(transaction_row['Date']))
@@ -561,14 +616,10 @@ def show_edit_page():
                 submit_btn = st.form_submit_button("Update Transaction")
 
                 if submit_btn:
-                    # Call the update function with row_index and new values to update the database
-                    update_transaction(row_index, date.strftime("%Y-%m-%d"), name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl)
+                    update_transaction(transaction_id, date.strftime("%Y-%m-%d"), name, vehicle, kap_number,
+                                       unit_kg, price, dolar, euro, zl, tl)
                     st.success("Transaction updated successfully")
 
-                    # Re-fetch updated transactions to reflect changes
-                    transactions = fetch_transactions(datetime.now().strftime('%Y-%m-%d'), 'All Profiles', True)
-                    df_transactions = pd.DataFrame(transactions, columns=["Date", "Name", "Unit-Kg", "Price", "Dolar", "Euro", "ZL", "T.L", "Vehicle", "Kap-Number"])
-                    st.dataframe(df_transactions)
 
     elif edit_option == "Transfers":
         transfers = fetch_transfers()
@@ -596,65 +647,56 @@ def show_edit_page():
                         df_transfers = pd.DataFrame(transfers, columns=["ID", "Date", "Name", "Transfer Amount", "Commission"])
                         st.dataframe(df_transfers)
 
+
+
     elif edit_option == "Outcomes":
         selected_date = st.date_input("Choose a date for Outcomes", pd.to_datetime("today").date())
         all_dates = st.checkbox("Show All Dates")
-        outcomes = fetch_outcomes(selected_date.strftime('%Y-%m-%d'), 'All Vehicles', all_dates)
 
+        outcomes = fetch_outcomes(selected_date.strftime('%Y-%m-%d'), 'All Vehicles', all_dates)
         df_outcomes = pd.DataFrame(outcomes,
-                                   columns=["Date", "Araç", "Tır Plaka", "Total Hamal", "Total Araç Masrafı", "Total Gümrük", "Total KOMŞU", "Total ŞOFÖR VE EKS.", "Total İNDİRME PLN.", "KAP M.", "Total Toplam Y"])
+                                   columns=["ID", "Date", "Araç", "Tır Plaka",
+                                            "Total Hamal", "Total Araç Masrafı", "Total Suat",
+                                            "Total KOMŞU", "Total ŞOFÖR VE EKS.", "Total İNDİRME PLN.",
+                                            "KAP M.", "EK MASRAF", "Kapı M.", "İşlem Maliyeti", "Total Toplam Y"])
         st.dataframe(df_outcomes)
 
         if not df_outcomes.empty:
-            row_index = st.selectbox("Select Row ID to Edit", df_outcomes.index.tolist())
-            outcome_row = df_outcomes.loc[row_index]
+            outcome_id = st.selectbox("Select Outcome ID to Edit", df_outcomes['ID'].tolist())
+            outcome_row = df_outcomes[df_outcomes['ID'] == outcome_id].iloc[0]
 
-            with st.form("edit_outcome_form"):
+            # Use outcome_id to create a unique form key
+            form_key = f"edit_outcome_form_{outcome_id}"
+
+            with st.form(form_key):
                 date = st.date_input("Date", value=pd.to_datetime(outcome_row['Date']))
                 arac = st.text_input("Araç", value=outcome_row['Araç'])
                 tir_plaka = st.text_input("Tır Plaka", value=outcome_row['Tır Plaka'])
                 hamal = st.number_input("Total Hamal", value=float(outcome_row['Total Hamal']))
                 arac_masrafi = st.number_input("Total Araç Masrafı", value=float(outcome_row['Total Araç Masrafı']))
-                gumruk = st.number_input("Total Gümrük", value=float(outcome_row['Total Gümrük']))
+                suat = st.number_input("Total Suat", value=float(outcome_row['Total Suat']))
                 komsu = st.number_input("Total KOMŞU", value=float(outcome_row['Total KOMŞU']))
                 sofor_ve_eks = st.number_input("Total ŞOFÖR VE EKS.", value=float(outcome_row['Total ŞOFÖR VE EKS.']))
                 indirme_pln = st.number_input("Total İNDİRME PLN.", value=float(outcome_row['Total İNDİRME PLN.']))
                 kap_m = st.text_input("KAP M.", value=outcome_row['KAP M.'])
+                ek_masraf = st.number_input("EK MASRAF", value=float(outcome_row['EK MASRAF']))
+                kapı_m = st.text_input("Kapı M.", value=outcome_row['Kapı M.'])
+                islem_maliyeti = st.number_input("İşlem Maliyeti", value=float(outcome_row['İşlem Maliyeti']))
                 toplam_y = st.number_input("Total Toplam Y", value=float(outcome_row['Total Toplam Y']))
                 submit_btn = st.form_submit_button("Update Outcome")
 
                 if submit_btn:
-                    update_outcome(row_index, date.strftime("%Y-%m-%d"), arac, tir_plaka, hamal, arac_masrafi, gumruk, komsu, sofor_ve_eks, indirme_pln, kap_m, toplam_y)
+                    update_outcome(outcome_id, date.strftime("%Y-%m-%d"), arac, tir_plaka, hamal, arac_masrafi, suat, komsu, sofor_ve_eks, indirme_pln, kap_m, ek_masraf, kapı_m, islem_maliyeti, toplam_y)
                     st.success("Outcome updated successfully")
 
+                    # Refresh the data display after update
                     outcomes = fetch_outcomes(selected_date.strftime('%Y-%m-%d'), 'All Vehicles', all_dates)
                     df_outcomes = pd.DataFrame(outcomes,
-                                               columns=["Date", "Araç", "Tır Plaka", "Total Hamal", "Total Araç Masrafı", "Total Gümrük", "Total KOMŞU", "Total ŞOFÖR VE EKS.", "Total İNDİRME PLN.", "KAP M.", "Total Toplam Y"])
+                                               columns=["ID", "Date", "Araç", "Tır Plaka",
+                                                        "Total Hamal", "Total Araç Masrafı", "Total Suat",
+                                                        "Total KOMŞU", "Total ŞOFÖR VE EKS.", "Total İNDİRME PLN.",
+                                                        "KAP M.", "EK MASRAF", "Kapı M.", "İşlem Maliyeti", "Total Toplam Y"])
                     st.dataframe(df_outcomes)
-
-        if not df_outcomes.empty:
-            row_index = st.selectbox("Select Row ID to Edit", df_outcomes.index.tolist())
-            outcome_row = df_outcomes.loc[row_index]
-
-            with st.form("edit_outcome_form"):
-                date = st.date_input("Date", value=pd.to_datetime(outcome_row['Date']))
-                arac = st.text_input("Araç", value=outcome_row['Araç'])
-                tir_plaka = st.text_input("Tır Plaka", value=outcome_row['Tır Plaka'])
-
-                hamal = st.number_input("Total Hamal", value=float(outcome_row['Total Hamal']))
-                arac_masrafi = st.number_input("Total Araç Masrafı", value=float(outcome_row['Total Araç Masrafı']))
-                gumruk = st.number_input("Total Gümrük", value=float(outcome_row['Total Gümrük']))
-                komsu = st.number_input("Total KOMŞU", value=float(outcome_row['Total KOMŞU']))
-                sofor_ve_eks = st.number_input("Total ŞOFÖR VE EKS.", value=float(outcome_row['Total ŞOFÖR VE EKS.']))
-                indirme_pln = st.number_input("Total İNDİRME PLN.", value=float(outcome_row['Total İNDİRME PLN.']))
-                kap_m = st.text_input("KAP M.", value=outcome_row['KAP M.'])
-                toplam_y = st.number_input("Total Toplam Y", value=float(outcome_row['Total Toplam Y']))
-                submit_btn = st.form_submit_button("Update Outcome")
-
-                if submit_btn:
-                    update_outcome(row_index, date.strftime("%Y-%m-%d"), arac, tir_plaka, hamal, arac_masrafi, gumruk,
-                                   komsu, sofor_ve_eks, indirme_pln, kap_m, toplam_y)
-                    st.success("Outcome updated successfully")
         else:
             st.warning("No outcomes available for selection.")
 
