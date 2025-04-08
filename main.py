@@ -24,7 +24,7 @@ def get_db_connection():
 
 # Conversion rates placeholders
 CONVERSION_RATE_DOLAR = 1.0  # Placeholder conversion rate for dollars
-CONVERSION_RATE_EURO = 1.2  # Placeholder conversion rate for euros
+CONVERSION_RATE_EURO = 1.0  # Placeholder conversion rate for euros
 
 
 # Initialize session state for filter option and all_dates flag
