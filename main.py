@@ -21,7 +21,6 @@ def get_db_connection():
         return None
 
 
-
 # Conversion rates placeholders
 CONVERSION_RATE_DOLAR = 1.0  # Placeholder conversion rate for dollars
 CONVERSION_RATE_EURO = 1.0  # Placeholder conversion rate for euros
@@ -88,7 +87,7 @@ def setup_database():
             indirme_pln REAL,
             kap_m TEXT,
             ek_masraf REAL,
-            kapı_m TEXT,
+            kapı_m REAL,
             islem_maliyeti REAL,
             toplam_y REAL
         )
@@ -176,6 +175,7 @@ def insert_outcome(date, arac, tir_plaka, hamal, arac_masrafi, suat, komsu, sofo
     indirme_pln = convert_value(indirme_pln)
     ek_masraf = convert_value(ek_masraf)
     islem_maliyeti = convert_value(islem_maliyeti)
+    kapı_m= convert_value(kapı_m)
     toplam_y = convert_value(toplam_y)
 
     with sqlite3.connect('profiles.db', timeout=10) as conn:
@@ -441,7 +441,7 @@ def show_accounting_page():
                     komsu = row.get('KOMŞU', '0')
                     sofor_ve_eks = row.get('ŞOFÖR VE EKS.', '0')
                     indirme_pln = row.get('İNDİRME PLN.', '0')
-                    kap_m = row.get('KAP M.', '')
+                    kap_m = row.get('KAP M.', '0')
                     ek_masraf = row.get('EK MASRAF', '0')
                     kapı_m = row.get('Kapı M.', '')
                     islem_maliyeti = row.get('İşlem Maliyeti', '0')
@@ -690,9 +690,9 @@ def show_edit_page():
                 komsu = st.text_input("Total KOMŞU", value=str(outcome_row['Total KOMŞU']))
                 sofor_ve_eks = st.text_input("Total ŞOFÖR VE EKS.", value=str(outcome_row['Total ŞOFÖR VE EKS.']))
                 indirme_pln = st.text_input("Total İNDİRME PLN.", value=str(outcome_row['Total İNDİRME PLN.']))
-                kap_m = st.text_input("KAP M.", value=outcome_row['KAP M.'])
+                kap_m = st.text_input("KAP M.", value=str(outcome_row['KAP M.']))
                 ek_masraf = st.text_input("EK MASRAF", value=str(outcome_row['EK MASRAF']))
-                kapı_m = st.text_input("Kapı M.", value=outcome_row['Kapı M.'])
+                kapı_m = st.text_input("Kapı M.", value=str(outcome_row['Kapı M.']))
                 islem_maliyeti = st.text_input("İşlem Maliyeti", value=str(outcome_row['İşlem Maliyeti']))
                 toplam_y = st.text_input("Total Toplam Y", value=str(outcome_row['Total Toplam Y']))
                 submit_btn = st.form_submit_button("Update Outcome")
@@ -706,6 +706,7 @@ def show_edit_page():
                     indirme_pln = convert_value(indirme_pln)
                     ek_masraf = convert_value(ek_masraf)
                     islem_maliyeti = convert_value(islem_maliyeti)
+                    kapı_m = convert_value(kapı_m)
                     toplam_y = convert_value(toplam_y)
 
                     update_outcome(outcome_id, date.strftime("%Y-%m-%d"), arac, tir_plaka, hamal, arac_masrafi, suat,
