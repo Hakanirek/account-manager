@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 from datetime import datetime
-
 import os
 import psycopg2
 import time
@@ -91,7 +90,7 @@ def setup_database():
             mazot REAL,
             sakal_yol REAL,
             ek_masraf REAL,
-            aciklama TEXT,
+            aciklama REAL,
             toplam_y REAL,
             toplam_m REAL
         )
@@ -168,9 +167,9 @@ def insert_transfer(date, name, transfer_amount, commission):
 def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
                    sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama):
     values_y = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf,
-                kapı_m]
+                kapı_m,aciklama]
     values_m = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf,
-                kapı_m]
+                kapı_m,aciklama]
 
     toplam_y = sum(convert_value(value) for value in values_y if 'Y' in str(value))
     toplam_m = sum(convert_value(value) for value in values_m if 'M' in str(value))
@@ -352,9 +351,9 @@ def update_transfer(transfer_id, date, name, transfer_amount, commission):
 def update_outcome(outcome_id, date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem,islem_r, kapı_m, hamal, sofor_ve_ekstr,
                    indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama):
     values_y = [ict, mer, blg, suat, komsu, islem, islem_r,hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf,
-                kapı_m]
+                kapı_m,aciklama]
     values_m = [ict, mer, blg, suat, komsu, islem, islem_r,hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf,
-                kapı_m]
+                kapı_m,aciklama]
 
     toplam_y = sum(convert_value(value) for value in values_y if 'Y' in str(value))
     toplam_m = sum(convert_value(value) for value in values_m if 'M' in str(value))
@@ -441,7 +440,7 @@ def show_accounting_page():
                     mazot = row.get('MAZOT', '0')
                     sakal_yol = row.get('SAKAL YOL', '0')
                     ek_masraf = row.get('EK MASRAF', '0')
-                    aciklama = row.get('Açıklama', '')
+                    aciklama = row.get('Açıklama', '0')
 
                     insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
                                    sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama)
