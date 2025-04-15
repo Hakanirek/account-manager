@@ -20,6 +20,7 @@ def get_db_connection():
         st.error(f"Unable to connect to the database: {e}")
         return None
 
+
 # Conversion rates placeholders
 CONVERSION_RATE_DOLAR = 1.0  # Placeholder conversion rate for dollars
 CONVERSION_RATE_EURO = 1.0  # Placeholder conversion rate for euros
@@ -45,7 +46,8 @@ def setup_database():
             dolar REAL,
             euro REAL,
             zl REAL,
-            tl REAL
+            tl REAL,
+            aciklama TEXT
         )
         ''')
 
@@ -112,29 +114,43 @@ def convert_value(value_str):
         return 0.0
 
 
-def insert_transaction(date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl):
+def insert_transaction(date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama):
     retry_count = 5
     while retry_count > 0:
         try:
             with sqlite3.connect('profiles.db', timeout=10) as conn:
                 c = conn.cursor()
+
+                # Ensure all values are checked for None and replaced appropriately
+                name = name or ''
+                vehicle = vehicle or ''
+                kap_number = kap_number or ''
+                unit_kg = unit_kg or 0.0
+                price = price or 0.0
+                dolar = dolar or 0.0
+                euro = euro or 0.0
+                zl = zl or 0.0
+                tl = tl or 0.0
+                aciklama = aciklama or ''
+
                 c.execute('SELECT COUNT(*) FROM transactions WHERE date = ? AND name = ? AND vehicle = ?',
                           (date, name, vehicle))
                 count = c.fetchone()[0]
                 if count == 0:
                     c.execute('''
-                    INSERT INTO transactions (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl))
+                    INSERT INTO transactions (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama))
 
+                # Balance checking and updating
                 c.execute('SELECT balance_dolar, balance_euro, balance_zl, balance_tl FROM profiles WHERE name = ?',
                           (name,))
                 result = c.fetchone()
                 if result:
-                    new_balance_dolar = (result[0] or 0) + dolar
-                    new_balance_euro = (result[1] or 0) + euro
-                    new_balance_zl = (result[2] or 0) + zl
-                    new_balance_tl = (result[3] or 0) + tl
+                    new_balance_dolar = (result[0] or 0.0) + dolar
+                    new_balance_euro = (result[1] or 0.0) + euro
+                    new_balance_zl = (result[2] or 0.0) + zl
+                    new_balance_tl = (result[3] or 0.0) + tl
                     c.execute(
                         'UPDATE profiles SET balance_dolar = ?, balance_euro = ?, balance_zl = ?, balance_tl = ? WHERE name = ?',
                         (new_balance_dolar, new_balance_euro, new_balance_zl, new_balance_tl, name))
@@ -211,25 +227,28 @@ def fetch_transactions(date, profile, all_dates):
             SELECT id, date, name,
                 ROUND(SUM(unit_kg), 2) as unit_kg, ROUND(SUM(price), 2) as price,
                 ROUND(SUM(dolar), 2) as dolar, ROUND(SUM(euro), 2) as euro, ROUND(SUM(zl), 2) as zl, ROUND(SUM(tl), 2) as tl,
-                TRIM(GROUP_CONCAT(DISTINCT vehicle), ', ') as vehicle, TRIM(GROUP_CONCAT(DISTINCT kap_number), ', ') as kap_number
+                TRIM(GROUP_CONCAT(DISTINCT vehicle), ', ') as vehicle, TRIM(GROUP_CONCAT(DISTINCT kap_number), ', ') as kap_number,
+                TRIM(GROUP_CONCAT(DISTINCT aciklama), ', ') as aciklama
             FROM transactions
         '''
 
-        if all_dates:
-            if profile == 'All Profiles':
-                sql += ' GROUP BY date, name'
-                c.execute(sql)
-            else:
-                sql += ' WHERE name = ? GROUP BY date, name'
-                c.execute(sql, (profile,))
-        else:
-            if profile == 'All Profiles':
-                sql += ' WHERE date = ? GROUP BY date, name'
-                c.execute(sql, (date,))
-            else:
-                sql += ' WHERE date = ? AND name = ? GROUP BY date, name'
-                c.execute(sql, (date, profile))
+        where_clause = []
+        params = []
 
+        if not all_dates:
+            where_clause.append('date = ?')
+            params.append(date)
+
+        if profile != 'All Profiles':
+            where_clause.append('name = ?')
+            params.append(profile)
+
+        if where_clause:
+            sql += f" WHERE {' AND '.join(where_clause)}"
+
+        sql += ' GROUP BY date, name'
+
+        c.execute(sql, params)
         transactions = c.fetchall()
     return transactions
 
@@ -311,7 +330,7 @@ def fetch_yearly_summary(year, profile):
     return yearly_summary
 
 
-def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl):
+def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama):
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         c.execute('SELECT balance_dolar, balance_euro, balance_zl, balance_tl FROM profiles WHERE name = ?', (name,))
@@ -331,9 +350,9 @@ def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg,
 
         c.execute('''
         UPDATE transactions
-        SET date = ?, name = ?, vehicle = ?, kap_number = ?, unit_kg = ?, price = ?, dolar = ?, euro = ?, zl = ?, tl = ?
+        SET date = ?, name = ?, vehicle = ?, kap_number = ?, unit_kg = ?, price = ?, dolar = ?, euro = ?, zl = ?, tl = ?, aciklama = ?
         WHERE id = ?
-        ''', (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, transaction_id))
+        ''', (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama, transaction_id))
         conn.commit()
 
 
@@ -373,7 +392,7 @@ def update_outcome(outcome_id, date, arac, tir_plaka, ict, mer, blg, suat, komsu
 def show_accounting_page():
     st.title("Accounting Program")
 
-    uploaded_file = st.file_uploader("Upload Process Excel file with Date, Name, Dolar, Euro, ZL, T.L", type="xlsx",
+    uploaded_file = st.file_uploader("Upload Process Excel file with Date, Name, Dolar, Euro, ZL, T.L, Açıklama", type="xlsx",
                                      key="transactions")
 
     if uploaded_file:
@@ -387,7 +406,8 @@ def show_accounting_page():
                 euro = row['Euro'] if not pd.isna(row['Euro']) else 0
                 zl = row['ZL'] if not pd.isna(row['ZL']) else 0
                 tl = row['T.L'] if not pd.isna(row['T.L']) else 0
-                insert_transaction(date, name, '', '', 0, 0, dolar, euro, zl, tl)
+                aciklama = row.get('Açıklama', '')
+                insert_transaction(date, name, '', '', 0, 0, dolar, euro, zl, tl, aciklama)
             st.success('Transaction data uploaded successfully')
         except Exception as e:
             st.error(f"An error occurred: {e}")
@@ -414,7 +434,8 @@ def show_accounting_page():
                     euro = row.get('Euro', 0) if not pd.isna(row.get('Euro', 0)) else 0
                     zl = row.get('ZL', 0) if 'ZL' in row and not pd.isna(row['ZL']) else 0
                     tl = row.get('T.L', 0) if 'T.L' in row and not pd.isna(row['T.L']) else 0
-                    insert_transaction(date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl)
+                    aciklama = row.get('Açıklama', '')
+                    insert_transaction(date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama)
                 st.success('Income data uploaded successfully')
 
             if 'Outcome' in xls.sheet_names:
@@ -462,7 +483,12 @@ def show_accounting_page():
                                               st.session_state.all_dates)
             df_transactions = pd.DataFrame(transactions,
                                            columns=["ID", "Date", "Name", "Unit-Kg", "Price", "Dolar", "Euro", "ZL",
-                                                    "T.L", "Vehicle", "Kap-Number"])
+                                                    "T.L", "Vehicle", "Kap-Number", "Açıklama"])
+            df_transactions.fillna('', inplace=True)  # Ensure no None values
+            st.subheader(
+                f"Transactions for {selected_profile} on {'All Dates' if st.session_state.all_dates else selected_date.strftime('%d.%m.%Y')}")
+            st.write(df_transactions)
+
             st.subheader(
                 f"Transactions for {selected_profile} on {'All Dates' if st.session_state.all_dates else selected_date.strftime('%d.%m.%Y')}")
             st.write(df_transactions)
@@ -629,7 +655,7 @@ def show_edit_page():
         transactions = fetch_transactions(datetime.now().strftime('%Y-%m-%d'), 'All Profiles', True)
         df_transactions = pd.DataFrame(transactions,
                                        columns=["ID", "Date", "Name", "Unit-Kg", "Price", "Dolar", "Euro", "ZL", "T.L",
-                                                "Vehicle", "Kap-Number"])
+                                                "Vehicle", "Kap-Number", "Açıklama"])
         st.dataframe(df_transactions)
 
         if not df_transactions.empty:
@@ -647,11 +673,12 @@ def show_edit_page():
                 euro = st.number_input("Euro", value=transaction_row['Euro'])
                 zl = st.number_input("ZL", value=transaction_row['ZL'])
                 tl = st.number_input("TL", value=transaction_row['T.L'])
+                aciklama = st.text_input("Açıklama", value=transaction_row['Açıklama'])
                 submit_btn = st.form_submit_button("Update Transaction")
 
                 if submit_btn:
                     update_transaction(transaction_id, date.strftime("%Y-%m-%d"), name, vehicle, kap_number, unit_kg,
-                                       price, dolar, euro, zl, tl)
+                                       price, dolar, euro, zl, tl, aciklama)
                     st.success("Transaction updated successfully")
 
     elif edit_option == "Transfers":
