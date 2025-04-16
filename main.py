@@ -2,10 +2,11 @@ import re
 import streamlit as st
 import pandas as pd
 import sqlite3
-from datetime import datetime
 import os
 import psycopg2
-import time
+from datetime import datetime
+
+
 
 def get_db_connection():
     try:
@@ -20,17 +21,25 @@ def get_db_connection():
         st.error(f"Unable to connect to the database: {e}")
         return None
 
-
 # Conversion rates placeholders
 CONVERSION_RATE_DOLAR = 1.0  # Placeholder conversion rate for dollars
 CONVERSION_RATE_EURO = 1.0  # Placeholder conversion rate for euros
 
+# Initialize session state variables
 for key in ['filter_option', 'all_dates']:
     if key not in st.session_state:
         st.session_state[key] = None
 
 
+def process_currency_value(value):
+    """Determine numeric values based on currency identifiers."""
+    dolar_value = convert_value(value) if 'Y' in str(value) else 0
+    euro_value = convert_value(value) if 'M' in str(value) else 0
+    return dolar_value, euro_value
+
+
 def setup_database():
+    """Setup the SQLite database and required tables if not already present."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
 
@@ -102,6 +111,7 @@ def setup_database():
 
 
 def convert_value(value_str):
+    """Convert a string value to a numerical value."""
     try:
         if pd.isna(value_str):
             return 0.0
@@ -115,6 +125,7 @@ def convert_value(value_str):
 
 
 def insert_transaction(date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama):
+    """Insert transaction data into transactions table with retry logic."""
     retry_count = 5
     while retry_count > 0:
         try:
@@ -142,7 +153,7 @@ def insert_transaction(date, name, vehicle, kap_number, unit_kg, price, dolar, e
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama))
 
-                # Balance checking and updating
+                # Balance updating
                 c.execute('SELECT balance_dolar, balance_euro, balance_zl, balance_tl FROM profiles WHERE name = ?',
                           (name,))
                 result = c.fetchone()
@@ -169,7 +180,36 @@ def insert_transaction(date, name, vehicle, kap_number, unit_kg, price, dolar, e
                 break
 
 
+def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
+                   sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama):
+    """Insert data into outcomes table."""
+    try:
+        # Convert potential inputs to expected types, with default fallback
+        values_y = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, kapı_m, aciklama]
+        values_m = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, kapı_m, aciklama]
+
+        toplam_y = sum(convert_value(value) for value in values_y if 'Y' in str(value))
+        toplam_m = sum(convert_value(value) for value in values_m if 'M' in str(value))
+
+        with sqlite3.connect('profiles.db', timeout=10) as conn:
+            c = conn.cursor()
+            c.execute('SELECT COUNT(*) FROM outcomes WHERE date = ? AND arac = ? AND tir_plaka = ?',
+                      (date, arac, tir_plaka))
+            count = c.fetchone()[0]
+
+            if count == 0:
+                c.execute(
+                    'INSERT INTO outcomes (date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr,
+                     indirme_pln,
+                     bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m))
+                conn.commit()
+    except Exception as e:
+        st.error(f"An error occurred while inserting outcomes: {e}")
+
+
 def insert_transfer(date, name, transfer_amount, commission):
+    """Insert transfer data into transfers table."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         c.execute('SELECT COUNT(*) FROM transfers WHERE date = ? AND name = ?', (date, name))
@@ -180,31 +220,34 @@ def insert_transfer(date, name, transfer_amount, commission):
         conn.commit()
 
 
-def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
-                   sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama):
-    values_y = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf,
-                kapı_m,aciklama]
-    values_m = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf,
-                kapı_m,aciklama]
+def process_outcomes_individually(outcomes_data):
+    """Process each outcome by type, aggregating shared date and vehicle entries."""
+    outcome_types = ['ICT', 'MER', 'BLG', 'SUAT', 'KOMSU', 'ISLEM', 'islem R', 'KAPI M', 'Hamal',
+                     'SOFOR VE EKSTR.', 'INDIRME PLN', 'BUS', 'MAZOT', 'SAKAL YOL', 'EK MASRAF', 'Açıklama']
 
-    toplam_y = sum(convert_value(value) for value in values_y if 'Y' in str(value))
-    toplam_m = sum(convert_value(value) for value in values_m if 'M' in str(value))
+    outcome_sums = {}
 
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        c.execute('SELECT COUNT(*) FROM outcomes WHERE date = ? AND arac = ? AND tir_plaka = ?',
-                  (date, arac, tir_plaka))
-        count = c.fetchone()[0]
+    # Aggregate values by date, vehicle and outcome type
+    for _, row in outcomes_data.iterrows():
+        date = row['Date']
+        vehicle = row['Araç']
 
-        if count == 0:
-            c.execute(
-                'INSERT INTO outcomes (date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                (date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr, indirme_pln,
-                 bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m))
-            conn.commit()
+        for outcome_type in outcome_types:
+            key = (date, vehicle, outcome_type)
+            if key not in outcome_sums:
+                outcome_sums[key] = {'dolar': 0, 'euro': 0}
+
+            dolar_value, euro_value = process_currency_value(row[outcome_type])
+            outcome_sums[key]['dolar'] -= dolar_value
+            outcome_sums[key]['euro'] -= euro_value
+
+    # Insert aggregated results for each type into transactions table
+    for (date, vehicle, outcome_type), values in outcome_sums.items():
+        insert_transaction(date, outcome_type, vehicle, "", 0, 0, values['dolar'], values['euro'], 0, 0, "")
 
 
 def fetch_profiles():
+    """Fetch profile names from profiles table."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         c.execute('SELECT name FROM profiles')
@@ -213,6 +256,7 @@ def fetch_profiles():
 
 
 def fetch_vehicles():
+    """Fetch vehicle names from outcomes table."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         c.execute('SELECT DISTINCT arac FROM outcomes')
@@ -221,6 +265,7 @@ def fetch_vehicles():
 
 
 def fetch_transactions(date, profile, all_dates):
+    """Fetch transaction data based on selected date and profile."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         sql = '''
@@ -254,6 +299,7 @@ def fetch_transactions(date, profile, all_dates):
 
 
 def fetch_transfers():
+    """Fetch transfer data from transfers table."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         c.execute('SELECT id, date, name, transfer_amount, commission FROM transfers')
@@ -262,11 +308,12 @@ def fetch_transfers():
 
 
 def fetch_outcomes(date, vehicle, all_dates):
+    """Fetch outcomes data based on selected date and vehicle."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
 
         sql = '''
-            SELECT DISTINCT id, date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem,islem_r, kapı_m, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m
+            SELECT DISTINCT id, date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m
             FROM outcomes
         '''
 
@@ -289,6 +336,7 @@ def fetch_outcomes(date, vehicle, all_dates):
 
 
 def fetch_monthly_summary(month, profile):
+    """Fetch monthly summary from transactions table."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         sql = '''
@@ -310,6 +358,7 @@ def fetch_monthly_summary(month, profile):
 
 
 def fetch_yearly_summary(year, profile):
+    """Fetch yearly summary from transactions table."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         sql = '''
@@ -331,6 +380,7 @@ def fetch_yearly_summary(year, profile):
 
 
 def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama):
+    """Update transaction data in transactions table."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         c.execute('SELECT balance_dolar, balance_euro, balance_zl, balance_tl FROM profiles WHERE name = ?', (name,))
@@ -357,6 +407,7 @@ def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg,
 
 
 def update_transfer(transfer_id, date, name, transfer_amount, commission):
+    """Update transfer data in transfers table."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         c.execute('''
@@ -367,12 +418,18 @@ def update_transfer(transfer_id, date, name, transfer_amount, commission):
         conn.commit()
 
 
-def update_outcome(outcome_id, date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem,islem_r, kapı_m, hamal, sofor_ve_ekstr,
-                   indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama):
-    values_y = [ict, mer, blg, suat, komsu, islem, islem_r,hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf,
-                kapı_m,aciklama]
-    values_m = [ict, mer, blg, suat, komsu, islem, islem_r,hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf,
-                kapı_m,aciklama]
+def update_outcome(outcome_id, date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
+                   sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama):
+
+
+
+    """Update outcome data in outcomes table."""
+    values_y = [ict, mer, blg, suat, komsu, islem, islem_r,
+                hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol,
+                ek_masraf, kapı_m, aciklama]
+    values_m = [ict, mer, blg, suat, komsu, islem, islem_r,
+                hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol,
+                ek_masraf, kapı_m, aciklama]
 
     toplam_y = sum(convert_value(value) for value in values_y if 'Y' in str(value))
     toplam_m = sum(convert_value(value) for value in values_m if 'M' in str(value))
@@ -384,15 +441,17 @@ def update_outcome(outcome_id, date, arac, tir_plaka, ict, mer, blg, suat, komsu
         SET date = ?, arac = ?, tir_plaka = ?, ict = ?, mer = ?, blg = ?, suat = ?, komsu = ?, islem = ?, islem_r = ?, kapı_m = ?, hamal = ?, sofor_ve_ekstr = ?, indirme_pln = ?, bus = ?, mazot = ?, sakal_yol = ?, ek_masraf = ?, aciklama = ?, toplam_y = ?, toplam_m = ?
         WHERE id = ?
         ''', (
-            date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr, indirme_pln, bus,
-            mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m, outcome_id))
+            date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr,
+            indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m, outcome_id))
         conn.commit()
 
 
 def show_accounting_page():
+    """Show the accounting page logic."""
     st.title("Accounting Program")
 
-    uploaded_file = st.file_uploader("Upload Process Excel file with Date, Name, Dolar, Euro, ZL, T.L, Açıklama", type="xlsx",
+    uploaded_file = st.file_uploader("Upload Process Excel file with Date, Name, Dolar, Euro, ZL, T.L, Açıklama",
+                                     type="xlsx",
                                      key="transactions")
 
     if uploaded_file:
@@ -435,12 +494,14 @@ def show_accounting_page():
                     zl = row.get('ZL', 0) if 'ZL' in row and not pd.isna(row['ZL']) else 0
                     tl = row.get('T.L', 0) if 'T.L' in row and not pd.isna(row['T.L']) else 0
                     aciklama = row.get('Açıklama', '')
+
                     insert_transaction(date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama)
                 st.success('Income data uploaded successfully')
 
             if 'Outcome' in xls.sheet_names:
                 outcome_data = pd.read_excel(xls, sheet_name='Outcome')
                 outcome_data['Date'] = pd.to_datetime(outcome_data['Date']).dt.strftime('%Y-%m-%d')
+
 
                 for _, row in outcome_data.iterrows():
                     date = row['Date']
@@ -465,10 +526,15 @@ def show_accounting_page():
 
                     insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
                                    sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama)
-                st.success('Outcome data uploaded successfully')
+
+                # Process outcomes individually and insert transactions per type
+                process_outcomes_individually(outcome_data)
+
+                st.success('Outcome data processed and uploaded successfully')
 
         except Exception as e:
             st.error(f"An error occurred: {e}")
+
     profiles = fetch_profiles()
     selected_profile = st.selectbox("Select Profile", options=profiles)
 
@@ -485,10 +551,6 @@ def show_accounting_page():
                                            columns=["ID", "Date", "Name", "Unit-Kg", "Price", "Dolar", "Euro", "ZL",
                                                     "T.L", "Vehicle", "Kap-Number", "Açıklama"])
             df_transactions.fillna('', inplace=True)  # Ensure no None values
-            st.subheader(
-                f"Transactions for {selected_profile} on {'All Dates' if st.session_state.all_dates else selected_date.strftime('%d.%m.%Y')}")
-            st.write(df_transactions)
-
             st.subheader(
                 f"Transactions for {selected_profile} on {'All Dates' if st.session_state.all_dates else selected_date.strftime('%d.%m.%Y')}")
             st.write(df_transactions)
@@ -513,11 +575,12 @@ def show_accounting_page():
         outcomes = fetch_outcomes(selected_date_str, selected_vehicle, st.session_state.all_dates)
         df_outcomes = pd.DataFrame(outcomes,
                                    columns=["ID", "Date", "Araç", "Tır Plaka", "ICT", "MER", "BLG", "SUAT", "KOMSU",
-                                            "ISLEM","ISLEM R", "KAPI M", "Hamal", "SOFOR VE EKSTR.", "INDIRME PLN", "BUS",
+                                            "ISLEM", "ISLEM R", "KAPI M", "Hamal", "SOFOR VE EKSTR.", "INDIRME PLN",
+                                            "BUS",
                                             "MAZOT", "SAKAL YOL", "EK MASRAF", "Açıklama", "Total Toplam Y",
                                             "Total Toplam M"])
 
-        filter_columns = ["Show All", "ICT", "MER", "BLG", "SUAT", "KOMSU", "ISLEM","ISLEM R", "KAPI M", "Hamal",
+        filter_columns = ["Show All", "ICT", "MER", "BLG", "SUAT", "KOMSU", "ISLEM", "ISLEM R", "KAPI M", "Hamal",
                           "SOFOR VE EKSTR.", "INDIRME PLN", "BUS", "MAZOT", "SAKAL YOL", "EK MASRAF", "Açıklama",
                           "Total Toplam Y", "Total Toplam M"]
         st.session_state['filter_option'] = st.selectbox("Select a column to filter", options=filter_columns,
@@ -530,7 +593,6 @@ def show_accounting_page():
         if filter_option == "Show All":
             st.write(df_outcomes)
 
-
             converted_values_y = df_outcomes["Total Toplam Y"].apply(convert_value)
             total_value_y = converted_values_y.sum()
             converted_values_m = df_outcomes["Total Toplam M"].apply(convert_value)
@@ -538,7 +600,6 @@ def show_accounting_page():
 
             st.write(f"Total Y: {total_value_y:.2f}")
             st.write(f"Total M: {total_value_m:.2f}")
-
 
         elif filter_option in df_outcomes.columns:
             df_filtered = df_outcomes[["Date", "Araç", filter_option]]
@@ -553,12 +614,8 @@ def show_accounting_page():
             total_value_m = converted_values_m.sum()
 
             st.write(f"Occurrences of {filter_option}: {occurrences}")
-            st.write(f"Total {filter_option} :  {total_value_y:.2f} Y")
-            st.write(f"Total {filter_option} :  {total_value_m:.2f} M")
-
-        else:
-            occurrences = df_outcomes[filter_option].value_counts().sum()
-            st.write(f"Occurrences of {filter_option}: {occurrences}")
+            st.write(f"Total {filter_option}: {total_value_y:.2f} Y")
+            st.write(f"Total {filter_option}: {total_value_m:.2f} M")
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
@@ -605,6 +662,7 @@ def show_accounting_page():
 
 
 def show_transfer_page():
+    """Show the transfer page logic."""
     st.title("Transfer Management")
 
     transfer_option = st.radio("Select Transfer Method", ("Upload File", "Manual Entry"))
@@ -647,6 +705,7 @@ def show_transfer_page():
 
 
 def show_edit_page():
+    """Show the edit data records page logic."""
     st.title("Edit Data Records")
 
     edit_option = st.radio("Select Data Type to Edit", ("Transactions", "Transfers", "Outcomes"))
@@ -714,7 +773,8 @@ def show_edit_page():
         outcomes = fetch_outcomes(selected_date.strftime('%Y-%m-%d'), 'All Vehicles', st.session_state.all_dates)
         df_outcomes = pd.DataFrame(outcomes,
                                    columns=["ID", "Date", "Araç", "Tır Plaka", "ICT", "MER", "BLG", "SUAT", "KOMSU",
-                                            "ISLEM","ISLEM R", "KAPI M", "Hamal", "SOFOR VE EKSTR.", "INDIRME PLN", "BUS",
+                                            "ISLEM", "ISLEM R", "KAPI M", "Hamal", "SOFOR VE EKSTR.", "INDIRME PLN",
+                                            "BUS",
                                             "MAZOT", "SAKAL YOL", "EK MASRAF", "Açıklama", "Total Toplam Y",
                                             "Total Toplam M"])
         st.dataframe(df_outcomes)
@@ -735,7 +795,7 @@ def show_edit_page():
                 suat = st.text_input("SUAT", value=str(outcome_row['SUAT']))
                 komsu = st.text_input("KOMSU", value=str(outcome_row['KOMSU']))
                 islem = st.text_input("ISLEM", value=str(outcome_row['ISLEM']))
-                islem_r= st.text_input("ISLEM R", value=str(outcome_row['ISLEM R']))
+                islem_r = st.text_input("ISLEM R", value=str(outcome_row['ISLEM R']))
                 kapı_m = st.text_input("KAPI M", value=str(outcome_row['KAPI M']))
                 hamal = st.text_input("Hamal", value=str(outcome_row['Hamal']))
                 sofor_ve_ekstr = st.text_input("SOFOR VE EKSTR.", value=str(outcome_row['SOFOR VE EKSTR.']))
@@ -749,14 +809,15 @@ def show_edit_page():
 
                 if submit_btn:
                     update_outcome(outcome_id, date.strftime("%Y-%m-%d"), arac, tir_plaka, ict, mer, blg, suat,
-                                   komsu, islem,islem_r, kapı_m, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol,
-                                   ek_masraf, aciklama)
+                                   komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot,
+                                   sakal_yol, ek_masraf, aciklama)
                     st.success("Outcome updated successfully")
                     outcomes = fetch_outcomes(selected_date.strftime('%Y-%m-%d'), 'All Vehicles',
                                               st.session_state.all_dates)
                     df_outcomes = pd.DataFrame(outcomes,
                                                columns=["ID", "Date", "Araç", "Tır Plaka", "ICT", "MER", "BLG", "SUAT",
-                                                        "KOMSU", "ISLEM","ISLEM R", "KAPI M", "Hamal", "SOFOR VE EKSTR.",
+                                                        "KOMSU", "ISLEM", "ISLEM R", "KAPI M", "Hamal",
+                                                        "SOFOR VE EKSTR.",
                                                         "INDIRME PLN", "BUS", "MAZOT", "SAKAL YOL", "EK MASRAF",
                                                         "Açıklama", "Total Toplam Y", "Total Toplam M"])
                     st.dataframe(df_outcomes)
