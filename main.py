@@ -7,7 +7,6 @@ import psycopg2
 from datetime import datetime
 
 
-
 def get_db_connection():
     try:
         conn = psycopg2.connect(
@@ -222,7 +221,7 @@ def insert_transfer(date, name, transfer_amount, commission):
 
 def process_outcomes_individually(outcomes_data):
     """Process each outcome by type, aggregating shared date and vehicle entries."""
-    outcome_types = ['ICT', 'MER', 'BLG', 'SUAT', 'KOMSU', 'ISLEM', 'islem R', 'KAPI M', 'Hamal',
+    outcome_types = ['ICT', 'MER', 'BLG', 'SUAT', 'KOMSU', 'ISLEM', 'ISLEM R', 'KAPI M', 'Hamal',
                      'SOFOR VE EKSTR.', 'INDIRME PLN', 'BUS', 'MAZOT', 'SAKAL YOL', 'EK MASRAF', 'Açıklama']
 
     outcome_sums = {}
@@ -513,7 +512,7 @@ def show_accounting_page():
                     suat = row.get('SUAT', '0')
                     komsu = row.get('KOMSU', '0')
                     islem = row.get('ISLEM', '0')
-                    islem_r = row.get('islem R', '0')
+                    islem_r = row.get('ISLEM R', '0')
                     kapı_m = row.get('KAPI M', '0')
                     hamal = row.get('Hamal', '0')
                     sofor_ve_ekstr = row.get('SOFOR VE EKSTR.', '0')
