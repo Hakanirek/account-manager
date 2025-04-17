@@ -237,8 +237,8 @@ def process_outcomes_individually(outcomes_data):
                 outcome_sums[key] = {'dolar': 0, 'euro': 0}
 
             dolar_value, euro_value = process_currency_value(row[outcome_type])
-            outcome_sums[key]['dolar'] -= dolar_value
-            outcome_sums[key]['euro'] -= euro_value
+            outcome_sums[key]['dolar'] += dolar_value
+            outcome_sums[key]['euro'] += euro_value
 
     # Insert aggregated results for each type into transactions table
     for (date, vehicle, outcome_type), values in outcome_sums.items():
