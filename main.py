@@ -2,10 +2,12 @@ import re
 import streamlit as st
 import pandas as pd
 import sqlite3
+import smtplib
+from email.mime.text import MIMEText
+from datetime import datetime
 import os
 import psycopg2
 from datetime import datetime
-
 
 def get_db_connection():
     try:
@@ -19,6 +21,71 @@ def get_db_connection():
     except psycopg2.OperationalError as e:
         st.error(f"Unable to connect to the database: {e}")
         return None
+
+##################### LOGIN SISTEMI#############
+
+KULLANICI_LISTESI = {
+    "User1": "pass1",
+    "User2": "pass2",
+    "User3": "pass3"
+}
+YONETICI_MAIL = "autonicaide@gmail.com"  # Burada bildirilecek mail adresini yaz
+MAIL_GONDER = True  # Test için False bırakabilirsiniz
+
+
+def login_kontrol():
+    if "user" not in st.session_state or not st.session_state["user"]:
+        st.session_state["user"] = None
+    if st.session_state["user"] is None:
+        st.title("Giriş Paneli")
+        kullanici = st.text_input("Kullanıcı Adı")
+        sifre = st.text_input("Şifre", type="password")
+        if st.button("Giriş Yap"):
+            if kullanici in KULLANICI_LISTESI and KULLANICI_LISTESI[kullanici] == sifre:
+                st.session_state["user"] = kullanici
+                st.success(f"Hoş geldin, {kullanici}")
+                st.rerun()
+
+            else:
+                st.error("Hatalı giriş!")
+        st.stop()
+    else:
+        st.sidebar.success(f"Giriş yapan: {st.session_state['user']}  [Çıkış için tıklayın]")
+        if st.sidebar.button("Çıkış Yap"):
+            st.session_state["user"] = None
+
+
+##### MAIL ##########
+
+def send_change_mail(kullanici, islemtipi, detay):
+    if not MAIL_GONDER:
+        return
+    try:
+        smtp_server = "smtp.gmail.com"
+        smtp_port = 587
+        sender_email = "autonicaide@gmail.com"
+        app_password = "hzle cpph yexl oglb"
+
+        now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        subject = f"Veri Değişikliği Bildirimi - {kullanici}"
+        content = f"""Aşağıdaki işlem yapıldı:
+        Kullanıcı: {kullanici}
+        İşlem türü: {islemtipi}
+        Detay: {detay}
+        Tarih/Saat: {now}"""
+
+        msg = MIMEText(content)
+        msg["Subject"] = subject
+        msg["From"] = sender_email
+        msg["To"] = YONETICI_MAIL
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, app_password)
+            server.sendmail(sender_email, YONETICI_MAIL, msg.as_string())
+    except Exception as e:
+        st.warning(f"Mail gönderilemedi: {e}")
+
 
 # Conversion rates placeholders
 CONVERSION_RATE_DOLAR = 1.0  # Placeholder conversion rate for dollars
@@ -70,14 +137,16 @@ def setup_database():
         ''')
 
         c.execute('''
-        CREATE TABLE IF NOT EXISTS transfers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            name TEXT,
-            transfer_amount REAL,
-            commission REAL
-        )
-        ''')
+                    CREATE TABLE IF NOT EXISTS transfers (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        date TEXT,
+                        name TEXT,
+                        dolar REAL,
+                        euro REAL,
+                        commission_dolar REAL,
+                        commission_euro REAL
+                    )
+                ''')
 
         c.execute('''
         CREATE TABLE IF NOT EXISTS outcomes (
@@ -105,6 +174,18 @@ def setup_database():
             toplam_m REAL
         )
         ''')
+
+        c.execute('''
+                    CREATE TABLE IF NOT EXISTS customers (
+                        m_no INTEGER PRIMARY KEY,
+                        isim TEXT,
+                        sehir TEXT,
+                        cep_tel TEXT,
+                        is_tel TEXT,
+                        firma TEXT,
+                        tel TEXT
+                    )
+                ''')
 
         conn.commit()
 
@@ -169,6 +250,11 @@ def insert_transaction(date, name, vehicle, kap_number, unit_kg, price, dolar, e
                         'INSERT INTO profiles (name, balance_dolar, balance_euro, balance_zl, balance_tl) VALUES (?, ?, ?, ?, ?)',
                         (name, dolar, euro, zl, tl))
                 conn.commit()
+
+            kullanici = st.session_state.get("user", "Bilinmiyor")
+            detay = f"Transaction Ekleme: {name}"
+            send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+
             break
         except sqlite3.OperationalError as e:
             if 'database is locked' in str(e):
@@ -184,8 +270,10 @@ def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, isl
     """Insert data into outcomes table."""
     try:
         # Convert potential inputs to expected types, with default fallback
-        values_y = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, kapı_m, aciklama]
-        values_m = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, kapı_m, aciklama]
+        values_y = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot,
+                    sakal_yol, ek_masraf, kapı_m, aciklama]
+        values_m = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot,
+                    sakal_yol, ek_masraf, kapı_m, aciklama]
 
         toplam_y = sum(convert_value(value) for value in values_y if 'Y' in str(value))
         toplam_m = sum(convert_value(value) for value in values_m if 'M' in str(value))
@@ -203,20 +291,45 @@ def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, isl
                      indirme_pln,
                      bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m))
                 conn.commit()
+
+        kullanici = st.session_state.get("user", "Bilinmiyor")
+        detay = f"Eklenen Gider: {arac}, tir_plaka: {tir_plaka}"
+        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
     except Exception as e:
         st.error(f"An error occurred while inserting outcomes: {e}")
 
 
-def insert_transfer(date, name, transfer_amount, commission):
-    """Insert transfer data into transfers table."""
+def insert_transfer(date, name, dolar, euro, commission_dolar, commission_euro):
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
-        c.execute('SELECT COUNT(*) FROM transfers WHERE date = ? AND name = ?', (date, name))
-        count = c.fetchone()[0]
-        if count == 0:
-            c.execute('INSERT INTO transfers (date, name, transfer_amount, commission) VALUES (?, ?, ?, ?)',
-                      (date, name, transfer_amount, commission))
+        c.execute('''
+            INSERT INTO transfers (date, name, dolar, euro, commission_dolar, commission_euro)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (date, name, dolar, euro, commission_dolar, commission_euro))
         conn.commit()
+
+    kullanici = st.session_state.get("user", "Bilinmiyor")
+    detay = f"Transfer Eklendi: {name}, transfer_dolar: {dolar},transfer_euro{euro} "
+    send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+
+
+def insert_customer(m_no, isim, sehir, cep_tel, is_tel, firma, tel):
+    try:
+        with sqlite3.connect('profiles.db', timeout=10) as conn:
+            c = conn.cursor()
+            c.execute(
+                "INSERT OR REPLACE INTO customers (m_no, isim, sehir, cep_tel, is_tel, firma, tel) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (int(m_no), isim, sehir, cep_tel, is_tel, firma, tel))
+            conn.commit()
+
+        # Bildirim
+        kullanici = st.session_state.get("user", "Bilinmiyor")
+        detay = f"Eklenen Müşteri: {isim}, M.NO: {m_no}"
+        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+
+
+    except Exception as e:
+        st.error(f"Müşteri eklerken hata oluştu: {e}")
 
 
 def process_outcomes_individually(outcomes_data):
@@ -297,11 +410,15 @@ def fetch_transactions(date, profile, all_dates):
     return transactions
 
 
-def fetch_transfers():
-    """Fetch transfer data from transfers table."""
+def fetch_transfers(name_filter=None):
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
-        c.execute('SELECT id, date, name, transfer_amount, commission FROM transfers')
+        sql = 'SELECT id, date, name, dolar, euro, commission_dolar, commission_euro FROM transfers'
+        params = []
+        if name_filter:
+            sql += ' WHERE LOWER(name) LIKE ?'
+            params.append(f'%{name_filter.lower()}%')
+        c.execute(sql, params)
         transfers = c.fetchall()
     return transfers
 
@@ -378,6 +495,82 @@ def fetch_yearly_summary(year, profile):
     return yearly_summary
 
 
+def fetch_customers(search_name=None, search_mno=None):
+    with sqlite3.connect('profiles.db', timeout=10) as conn:
+        c = conn.cursor()
+        sql = 'SELECT m_no, isim, sehir, cep_tel, is_tel, firma, tel FROM customers WHERE 1=1'
+        params = []
+        if search_name:
+            sql += ' AND lower(isim) LIKE ?'
+            params.append(f'%{search_name.lower()}%')
+        if search_mno:
+            sql += ' AND m_no = ?'
+            params.append(int(search_mno))
+        sql += ' ORDER BY m_no ASC'
+        c.execute(sql, params)
+        customers = c.fetchall()
+    return customers
+
+
+def upload_transfers_from_excel(file):
+    try:
+        df = pd.read_excel(file)
+        colmap = {
+            "DATE": "date",
+            "NAME": "name",
+            "DOLAR": "dolar",
+            "EURO": "euro",
+            "COMMISSION_DOLAR": "commission_dolar",
+            "COMMISSION_EURO": "commission_euro"
+        }
+        df.columns = [col.strip().upper() for col in df.columns]
+        # Eksik sütun kontrolü
+        for required in colmap.keys():
+            if required not in df.columns:
+                raise Exception(f"Beklenen sütun eksik: {required}")
+        for _, row in df.iterrows():
+            insert_transfer(
+                str(row["DATE"]),
+                str(row["NAME"]),
+                float(row["DOLAR"]) if pd.notna(row["DOLAR"]) else 0,
+                float(row["EURO"]) if pd.notna(row["EURO"]) else 0,
+                float(row["COMMISSION_DOLAR"]) if pd.notna(row["COMMISSION_DOLAR"]) else 0,
+                float(row["COMMISSION_EURO"]) if pd.notna(row["COMMISSION_EURO"]) else 0,
+            )
+        st.success("Transferler başarıyla yüklendi!")
+
+        kullanici = st.session_state.get("user", "Bilinmiyor")
+        detay = f"Excel'den Eklenen Transfer"
+        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+
+    except Exception as e:
+        st.error(f"Transfer excel yüklemesi hatası: {e}")
+
+
+def upload_customers_from_excel(file):
+    try:
+        df = pd.read_excel(file, dtype=str)
+        # Beklenen kolon adları: M.NO, İSİM, ŞEHİR, CEP TEL, İŞ TEL, FIRMA, TEL
+        df.columns = [col.strip().upper() for col in df.columns]
+        required_columns = ['M.NO', 'İSİM', 'ŞEHİR', 'CEP TEL', 'İŞ TEL', 'FIRMA', 'TEL']
+        if not all(col in df.columns for col in required_columns):
+            raise Exception("Eksik ya da yanlış sütun adı! Beklenen: " + ", ".join(required_columns))
+        for _, row in df.iterrows():
+            insert_customer(
+                row['M.NO'], row['İSİM'], row['ŞEHİR'],
+                row['CEP TEL'], row['İŞ TEL'],
+                row['FIRMA'], row['TEL']
+            )
+        st.success("Excel'den müşteriler başarıyla yüklendi.")
+
+        kullanici = st.session_state.get("user", "Bilinmiyor")
+        detay = f"Excel'den Eklenen Müşteri"
+        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+
+    except Exception as e:
+        st.error(f"Excel yüklenirken hata oluştu: {e}")
+
+
 def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama):
     """Update transaction data in transactions table."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
@@ -404,6 +597,10 @@ def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg,
         ''', (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama, transaction_id))
         conn.commit()
 
+    kullanici = st.session_state.get("user", "Bilinmiyor")
+    detay = f"Transaction Güncelleme : {name}"
+    send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+
 
 def update_transfer(transfer_id, date, name, transfer_amount, commission):
     """Update transfer data in transfers table."""
@@ -416,12 +613,13 @@ def update_transfer(transfer_id, date, name, transfer_amount, commission):
         ''', (date, name, transfer_amount, commission, transfer_id))
         conn.commit()
 
+    kullanici = st.session_state.get("user", "Bilinmiyor")
+    detay = f"Transfer Güncelleme : {name}"
+    send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+
 
 def update_outcome(outcome_id, date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
                    sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama):
-
-
-
     """Update outcome data in outcomes table."""
     values_y = [ict, mer, blg, suat, komsu, islem, islem_r,
                 hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol,
@@ -444,12 +642,45 @@ def update_outcome(outcome_id, date, arac, tir_plaka, ict, mer, blg, suat, komsu
             indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m, outcome_id))
         conn.commit()
 
+    kullanici = st.session_state.get("user", "Bilinmiyor")
+    detay = f"Gider Güncelleme : {arac}, tir_plaka: {tir_plaka} "
+    send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+
+
+def update_customer(m_no, isim, sehir, cep_tel, is_tel, firma, tel):
+    try:
+        with sqlite3.connect('profiles.db', timeout=10) as conn:
+            c = conn.cursor()
+            c.execute('''
+                UPDATE customers SET
+                  isim = ?,
+                  sehir = ?,
+                  cep_tel = ?,
+                  is_tel = ?,
+                  firma = ?,
+                  tel = ?
+                WHERE m_no = ?
+            ''', (isim, sehir, cep_tel, is_tel, firma, tel, int(m_no)))
+            conn.commit()
+
+        kullanici = st.session_state.get("user", "Bilinmiyor")
+        detay = f"Müşteri Güncellemesi : {isim}, M.NO: {m_no}"
+        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+
+    except Exception as e:
+        st.error(f"Müşteri güncellenirken hata oluştu: {e}")
+
 
 def show_accounting_page():
+    login_kontrol()
     """Show the accounting page logic."""
     st.title("Accounting Program")
+    st.info("İşlemlerinizi toplu Excel yüklemesi veya manuel olarak ekleyebilirsiniz.\n"
+            "Ayrıca ad, tarih ve araca göre arama ve filtreleme yapabilirsiniz.\n"
+            "**Beklenen sütunlar:** Date, Name, Dolar, Euro, ZL, T.L, Açıklama "
+            "(Başlıklar büyük harf olmalı, tarih GÜN.AY.YIL formatında olmalı)")
 
-    uploaded_file = st.file_uploader("Upload Process Excel file with Date, Name, Dolar, Euro, ZL, T.L, Açıklama",
+    uploaded_file = st.file_uploader("Muhasebe Excel Dosyası (Date, Name, Dolar, Euro, ZL, T.L, Açıklama",
                                      type="xlsx",
                                      key="transactions")
 
@@ -469,6 +700,10 @@ def show_accounting_page():
             st.success('Transaction data uploaded successfully')
         except Exception as e:
             st.error(f"An error occurred: {e}")
+
+    st.info("Gelir ve giderler için Excel yükleyebilirsiniz. \n\n"
+            "Gelir sayfası için: **Date, Name, Vehicle, Kap-Number, Unit-Kg, Price, Dolar, Euro, ZL, T.L, Açıklama**\n\n"
+            "Gider sayfası için: **Date, Araç, Tır Plaka, ICT, MER, BLG, SUAT, KOMSU, ISLEM, ISLEM R, ...**")
 
     income_file = st.file_uploader("Upload Income-Outcome Excel file with Income and Outcome sheets", type="xlsx",
                                    key="income")
@@ -500,7 +735,6 @@ def show_accounting_page():
             if 'Outcome' in xls.sheet_names:
                 outcome_data = pd.read_excel(xls, sheet_name='Outcome')
                 outcome_data['Date'] = pd.to_datetime(outcome_data['Date']).dt.strftime('%Y-%m-%d')
-
 
                 for _, row in outcome_data.iterrows():
                     date = row['Date']
@@ -661,49 +895,71 @@ def show_accounting_page():
 
 
 def show_transfer_page():
-    """Show the transfer page logic."""
-    st.title("Transfer Management")
+    login_kontrol()
 
-    transfer_option = st.radio("Select Transfer Method", ("Upload File", "Manual Entry"))
+    st.title("Transfer Yönetimi")
+    st.info("Transferleri toplu Excel yüklemesiyle veya tek tek manuel olarak ekleyebilirsiniz.\n\n"
+            "Beklenen sütunlar: DATE, NAME, DOLAR, EURO, COMMISSION_DOLAR, COMMISSION_EURO (Başlıklar büyük harf olmalı)"
+            )
 
-    if transfer_option == "Upload File":
-        transfer_file = st.file_uploader("Upload Excel file with Date, Name, Transfer Amount, Commission", type="xlsx")
-
+    transfer_option = st.radio("Transfer ekleme yöntemi:", ("Excel ile Ekle", "Manuel Ekle"))
+    if transfer_option == "Excel ile Ekle":
+        st.subheader("Excel ile Toplu Transfer Ekle")
+        st.markdown(":blue[**Beklenen Sütunlar:** DATE, NAME, DOLAR, EURO, COMMISSION_DOLAR, COMMISSION_EURO]")
+        transfer_file = st.file_uploader("Excel Yükle", type="xlsx")
         if transfer_file:
-            try:
-                transfer_data = pd.read_excel(transfer_file)
-                transfer_data['Date'] = pd.to_datetime(transfer_data['Date']).dt.strftime('%Y-%m-%d')
+            upload_transfers_from_excel(transfer_file)
 
-                for index, row in transfer_data.iterrows():
-                    date, name = row['Date'], row['Name']
-                    transfer_amount, commission = row['Transfer Amount'], row['Commission']
-                    insert_transfer(date, name, transfer_amount, commission)
-                st.success('Transfer data uploaded and recorded successfully')
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
-
-    elif transfer_option == "Manual Entry":
+    elif transfer_option == "Manuel Ekle":
+        st.subheader("Manuel Transfer Ekle")
         with st.form("manual_transfer_form"):
-            transfer_date = st.date_input("Transaction date", pd.to_datetime("today").date())
+            transfer_date = st.date_input("Date", pd.to_datetime("today").date())
             transfer_name = st.text_input("Name")
-            transfer_amount = st.number_input("Transfer Amount", min_value=0.0)
-            transfer_commission = st.number_input("Commission", min_value=0.0)
-            submit_btn = st.form_submit_button("Submit Transfer")
+            transfer_dolar = st.number_input("Dolar", value=0.0, step=0.01)
+            transfer_euro = st.number_input("Euro", value=0.0, step=0.01)
+            commission_dolar = st.number_input("Komisyon DOLAR", value=0.0, step=0.01)
+            commission_euro = st.number_input("Komisyon EURO", value=0.0, step=0.01)
+            submit_btn = st.form_submit_button("Transferi Kaydet")
+            if submit_btn and transfer_name:
+                insert_transfer(
+                    transfer_date.strftime('%Y-%m-%d'),
+                    transfer_name,
+                    transfer_dolar,
+                    transfer_euro,
+                    commission_dolar,
+                    commission_euro
+                )
+                st.success("Transfer kaydedildi!")
 
-            if submit_btn:
-                insert_transfer(transfer_date.strftime('%Y-%m-%d'), transfer_name, transfer_amount, transfer_commission)
-                st.success("Transfer recorded successfully")
+    st.markdown("---")
+    st.subheader("Transferler Listesi")
 
-    st.subheader("All Transfers")
-    try:
-        transfers = fetch_transfers()
-        df_transfers = pd.DataFrame(transfers, columns=["ID", "Date", "Name", "Transfer Amount", "Commission"])
-        st.write(df_transfers)
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
+    # Arama Kutusu
+    search_name = st.text_input("İsme göre arama (içeren):", key="transfer_name_search")
+    transfers = fetch_transfers(name_filter=search_name)
+
+    df_transfers = pd.DataFrame(
+        transfers,
+        columns=["ID", "Date", "Name", "Dolar", "Euro", "Komisyon Dolar", "Komisyon Euro"]
+    )
+    st.dataframe(df_transfers)
+
+    # Yearly Summary tarzında aşağıda otomatik toplam: (sadece görüntüde)
+    if not df_transfers.empty:
+        totals = {
+            "Toplam Dolar": df_transfers["Dolar"].sum(),
+            "Toplam Euro": df_transfers["Euro"].sum(),
+            "Toplam Komisyon Dolar": df_transfers["Komisyon Dolar"].sum(),
+            "Toplam Komisyon Euro": df_transfers["Komisyon Euro"].sum(),
+        }
+        st.markdown("#### Toplamlar (Listedeki kayıtlar için):")
+        for k, v in totals.items():
+            st.write(f"{k}: {v:.2f}")
 
 
 def show_edit_page():
+    login_kontrol()
+
     """Show the edit data records page logic."""
     st.title("Edit Data Records")
 
@@ -824,12 +1080,101 @@ def show_edit_page():
             st.warning("No outcomes available for selection.")
 
 
+def show_customers_page():
+    login_kontrol()
+    st.title("Müşteri Bilgileri Yönetimi")
+    st.info(
+        "Müşterilerinizi toplu Excel yüklemesiyle veya tek tek manuel olarak ekleyebilirsiniz. "
+        "Ek olarak ada ya da M.NO'ya göre arama ve düzenleme yapabilirsiniz.\n\n"
+        "Beklenen sütunlar: M.NO, İSİM, ŞEHİR, CEP TEL, İŞ TEL, FIRMA, TEL "
+        "(Başlıklar büyük harf ve Türkçe karakterli olmalı)"
+    )
+
+    add_mode = st.radio("Müşteri ekleme yöntemi seçin:", ("Excel ile Ekle", "Manuel Ekle"))
+
+    if add_mode == "Excel ile Ekle":
+        st.subheader("Excel ile Toplu Müşteri Ekle")
+        st.markdown(
+            "**Beklenen sütunlar:** `M.NO, İSİM, ŞEHİR, CEP TEL, İŞ TEL, FIRMA, TEL`  (Başlıklar büyük harf ve Türkçe karakterli olmalı)")
+        cust_file = st.file_uploader("Müşteri Bilgileri Excel Dosyası (.xlsx)", type='xlsx', key="customer_upload")
+        if cust_file:
+            upload_customers_from_excel(cust_file)
+
+    elif add_mode == "Manuel Ekle":
+        st.subheader("Manuel Müşteri Ekle (veya Güncelle)")
+        st.markdown(
+            "**Açıklama:** Form ile tek tek müşteri ekleyebilir veya aynı M.NO'yu girerek mevcut müşteriyi güncelleyebilirsiniz.")
+        with st.form("manual_customer_form"):
+            m_no = st.number_input("Müşteri Numarası (M.NO)", min_value=0, step=1, format="%d")
+            isim = st.text_input("İsim")
+            sehir = st.text_input("Şehir")
+            cep_tel = st.text_input("Cep Tel")
+            is_tel = st.text_input("İş Tel")
+            firma = st.text_input("Firma")
+            tel = st.text_input("Tel")
+            submit_btn = st.form_submit_button("Müşteri Ekle veya Güncelle")
+            if submit_btn and isim:
+                insert_customer(m_no, isim, sehir, cep_tel, is_tel, firma, tel)
+                st.success(f"Müşteri kaydı başarıyla eklendi/güncellendi: {isim}")
+
+    st.markdown("---")
+
+    st.subheader("Müşteri Ara")
+    st.markdown(
+        "İsim veya M.NO ile arama yapabilirsiniz. Sonuç tablosundan müşteriyi seçip düzenlemek için 'Düzenle' butonuna tıklayın.")
+    col1, col2 = st.columns(2)
+    with col1:
+        search_name = st.text_input("İsimde ara", key="cust_name_search")
+    with col2:
+        search_mno = st.text_input("M.NO ile ara", key="cust_mno_search")
+    customers = fetch_customers(search_name=search_name, search_mno=search_mno)
+    df_customers = pd.DataFrame(customers, columns=['M.NO', 'İSİM', 'ŞEHİR', 'CEP TEL', 'İŞ TEL', 'FIRMA', 'TEL'])
+    st.dataframe(df_customers)
+
+    # DÜZENLEME MODU (tıklandığında göster)
+    if not df_customers.empty:
+        st.subheader("Müşteri Bilgisi Düzenleme")
+
+        # Formu açmak için state kullanalım:
+        if "edit_open" not in st.session_state:
+            st.session_state["edit_open"] = False
+        if "edit_mno_value" not in st.session_state:
+            st.session_state["edit_mno_value"] = None
+
+        edit_mno = st.selectbox("Düzenlenecek M.NO seçin", df_customers['M.NO'].astype(int).tolist(),
+                                key="edit_mno_select")
+        edit_btn = st.button("Düzenle")
+
+        if edit_btn:
+            st.session_state["edit_open"] = True
+            st.session_state["edit_mno_value"] = edit_mno
+
+        # Formu sadece buton basıldığında göster
+        if st.session_state["edit_open"] and st.session_state["edit_mno_value"] == edit_mno:
+            current = df_customers[df_customers['M.NO'] == edit_mno].iloc[0]
+            with st.form("edit_customer_form"):
+                isim_e = st.text_input("İsim", value=current['İSİM'])
+                sehir_e = st.text_input("Şehir", value=current['ŞEHİR'])
+                cep_tel_e = st.text_input("Cep Tel", value=current['CEP TEL'])
+                is_tel_e = st.text_input("İş Tel", value=current['İŞ TEL'])
+                firma_e = st.text_input("Firma", value=current['FIRMA'])
+                tel_e = st.text_input("Tel", value=current['TEL'])
+                submit_edit = st.form_submit_button("Güncelle")
+                if submit_edit:
+                    update_customer(edit_mno, isim_e, sehir_e, cep_tel_e, is_tel_e, firma_e, tel_e)
+                    st.success(f"Müşteri (M.NO: {edit_mno}) başarıyla güncellendi.")
+                    # Güncellemeden sonra formu kapatmak için:
+                    st.session_state["edit_open"] = False
+
+
 setup_database()
-page_selection = st.sidebar.selectbox("Select Page", ["Accounting", "Transfer", "Edit Data"])
+page_selection = st.sidebar.selectbox("Select Page", ["Accounting", "Transfer", "Customer", "Edit Data"])
 
 if page_selection == "Accounting":
     show_accounting_page()
 elif page_selection == "Transfer":
     show_transfer_page()
+elif page_selection == "Customer":
+    show_customers_page()
 elif page_selection == "Edit Data":
     show_edit_page()
