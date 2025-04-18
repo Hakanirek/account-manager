@@ -308,6 +308,7 @@ def insert_transfer(date, name, dolar, euro, commission_dolar, commission_euro):
         ''', (date, name, dolar, euro, commission_dolar, commission_euro))
         conn.commit()
 
+
     kullanici = st.session_state.get("user", "Bilinmiyor")
     detay = f"Transfer Eklendi: {name}, transfer_dolar: {dolar},transfer_euro{euro} "
     send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
@@ -602,16 +603,19 @@ def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg,
     send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
 
 
-def update_transfer(transfer_id, date, name, transfer_amount, commission):
+def update_transfer(transfer_id, date, name, dolar,euro, commission_dolar,commission_euro):
     """Update transfer data in transfers table."""
     with sqlite3.connect('profiles.db', timeout=10) as conn:
         c = conn.cursor()
         c.execute('''
         UPDATE transfers
-        SET date = ?, name = ?, transfer_amount = ?, commission = ?
+        SET date = ?, name = ?, dolar = ?, euro = ?, commission_dolar = ?,commission_euro = ?
         WHERE id = ?
-        ''', (date, name, transfer_amount, commission, transfer_id))
+        ''', (date, name, dolar, euro, commission_dolar,commission_euro, transfer_id))
         conn.commit()
+
+
+
 
     kullanici = st.session_state.get("user", "Bilinmiyor")
     detay = f"Transfer Güncelleme : {name}"
@@ -997,29 +1001,40 @@ def show_edit_page():
 
     elif edit_option == "Transfers":
         transfers = fetch_transfers()
-        df_transfers = pd.DataFrame(transfers, columns=["ID", "Date", "Name", "Transfer Amount", "Commission"])
+        df_transfers = pd.DataFrame(transfers, columns=["ID", "Date", "Name","Dolar", "Euro","Komisyon Dolar", "Komisyon Euro"])
         st.dataframe(df_transfers)
 
         if not df_transfers.empty:
-            transfer_id = st.selectbox("Select Transfer ID to Edit", df_transfers['ID'].tolist())
-            transfer_row = df_transfers[df_transfers['ID'] == transfer_id]
+            transfer_id = st.selectbox("Düzenlenecek Transfer ID", df_transfers['ID'].tolist())
+            transfer_row = df_transfers[df_transfers['ID'] == transfer_id].iloc[0]
+            with st.form("edit_transfer_form"):
+                date = st.date_input("Tarih", value=pd.to_datetime(transfer_row['Date']))
+                name = st.text_input("İsim", value=transfer_row['Name'])
+                dolar = st.number_input("Dolar", value=float(transfer_row['Dolar']))
+                euro = st.number_input("Euro", value=float(transfer_row['Euro']))
+                commission_dolar = st.number_input("Komisyon Dolar", value=float(transfer_row['Komisyon Dolar']))
+                commission_euro = st.number_input("Komisyon Euro", value=float(transfer_row['Komisyon Euro']))
+                submit_btn = st.form_submit_button("Güncelle")
+                if submit_btn:
+                    update_transfer(
+                        transfer_id,
+                        date.strftime("%Y-%m-%d"), name,
+                        dolar, euro,
+                        commission_dolar, commission_euro
+                    )
+                    st.success("Transfer güncellendi.")
 
-            if not transfer_row.empty:
-                transfer_row = transfer_row.iloc[0]
-                with st.form("edit_transfer_form"):
-                    date = st.date_input("Date", value=pd.to_datetime(transfer_row['Date']))
-                    name = st.text_input("Name", value=transfer_row['Name'])
-                    transfer_amount = st.number_input("Transfer Amount", value=float(transfer_row['Transfer Amount']))
-                    commission = st.number_input("Commission", value=float(transfer_row['Commission']))
-                    submit_btn = st.form_submit_button("Update Transfer")
-
-                    if submit_btn:
-                        update_transfer(transfer_id, date.strftime("%Y-%m-%d"), name, transfer_amount, commission)
-                        st.success("Transfer updated successfully")
-                        transfers = fetch_transfers()
-                        df_transfers = pd.DataFrame(transfers,
-                                                    columns=["ID", "Date", "Name", "Transfer Amount", "Commission"])
-                        st.dataframe(df_transfers)
+                    # Listeyi güncelle
+                    transfers = fetch_transfers()
+                    df_transfers = pd.DataFrame(
+                        transfers,
+                        columns=[
+                            "ID", "Date", "Name",
+                            "Dolar", "Euro",
+                            "Komisyon Dolar", "Komisyon Euro"
+                        ]
+                    )
+                    st.dataframe(df_transfers)
 
     elif edit_option == "Outcomes":
         selected_date = st.date_input("Choose a date for Outcomes", pd.to_datetime("today").date())
