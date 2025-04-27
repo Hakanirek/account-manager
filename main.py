@@ -1,18 +1,16 @@
 import re
 import streamlit as st
 import pandas as pd
-import sqlite3
 import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime
-
 import os
 import psycopg2
-
 from datetime import datetime
 from PIL import Image
 import base64
 from io import BytesIO
+
 
 # Base64'e çevirme fonksiyonu
 
@@ -24,8 +22,8 @@ def image_to_base64(img_path):
     return img_b64
 
 
-
 encoded_logo = image_to_base64("logo.png")
+
 
 def get_db_connection():
     try:
@@ -39,7 +37,6 @@ def get_db_connection():
     except psycopg2.OperationalError as e:
         st.error(f"Unable to connect to the database: {e}")
         return None
-
 
 
 ##################### LOGIN SISTEMI#############
@@ -126,7 +123,7 @@ def process_currency_value(value):
 
 def setup_database():
     """Setup the SQLite database and required tables if not already present."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
 
         c.execute('''
@@ -224,65 +221,82 @@ def convert_value(value_str):
         return 0.0
 
 
-def insert_transaction(date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama):
-    """Insert transaction data into transactions table with retry logic."""
-    retry_count = 5
-    while retry_count > 0:
-        try:
-            with sqlite3.connect('profiles.db', timeout=10) as conn:
-                c = conn.cursor()
+def insert_transactions_batch(transactions_data):
+    """Insert multiple transactions in a single batch operation."""
+    with get_db_connection() as conn:
+        c = conn.cursor()
 
-                # Ensure all values are checked for None and replaced appropriately
-                name = name or ''
-                vehicle = vehicle or ''
-                kap_number = kap_number or ''
-                unit_kg = unit_kg or 0.0
-                price = price or 0.0
-                dolar = dolar or 0.0
-                euro = euro or 0.0
-                zl = zl or 0.0
-                tl = tl or 0.0
-                aciklama = aciklama or ''
+        # First, check for existing records
+        existing_records = set()
+        for row in transactions_data:
+            c.execute('''
+                SELECT COUNT(*) FROM transactions 
+                WHERE date = ? AND name = ? AND vehicle = ?
+            ''', (row['date'], row['name'], row['vehicle']))
+            count = c.fetchone()[0]
+            if count == 0:
+                existing_records.add((row['date'], row['name'], row['vehicle']))
 
-                c.execute('SELECT COUNT(*) FROM transactions WHERE date = ? AND name = ? AND vehicle = ?',
-                          (date, name, vehicle))
-                count = c.fetchone()[0]
-                if count == 0:
-                    c.execute('''
-                    INSERT INTO transactions (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama))
+        # Prepare the data for batch insert, excluding duplicates
+        values = []
+        for row in transactions_data:
+            if (row['date'], row['name'], row['vehicle']) in existing_records:
+                values.append((
+                    row['date'],
+                    row['name'],
+                    row['vehicle'],
+                    row['kap_number'],
+                    row['unit_kg'],
+                    row['price'],
+                    row['dolar'],
+                    row['euro'],
+                    row['zl'],
+                    row['tl'],
+                    row['aciklama']
+                ))
 
-                # Balance updating
-                c.execute('SELECT balance_dolar, balance_euro, balance_zl, balance_tl FROM profiles WHERE name = ?',
-                          (name,))
-                result = c.fetchone()
-                if result:
-                    new_balance_dolar = (result[0] or 0.0) + dolar
-                    new_balance_euro = (result[1] or 0.0) + euro
-                    new_balance_zl = (result[2] or 0.0) + zl
-                    new_balance_tl = (result[3] or 0.0) + tl
-                    c.execute(
-                        'UPDATE profiles SET balance_dolar = ?, balance_euro = ?, balance_zl = ?, balance_tl = ? WHERE name = ?',
-                        (new_balance_dolar, new_balance_euro, new_balance_zl, new_balance_tl, name))
-                else:
-                    c.execute(
-                        'INSERT INTO profiles (name, balance_dolar, balance_euro, balance_zl, balance_tl) VALUES (?, ?, ?, ?, ?)',
-                        (name, dolar, euro, zl, tl))
-                conn.commit()
+        if values:
+            # Execute batch insert
+            c.executemany('''
+                INSERT INTO transactions (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', values)
 
-            kullanici = st.session_state.get("user", "Bilinmiyor")
-            detay = f"Transaction Ekleme: {name}"
-            send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+            # Update profiles in batch
+            profile_updates = {}
+            for row in transactions_data:
+                if (row['date'], row['name'], row['vehicle']) in existing_records:
+                    name = row['name']
+                    if name not in profile_updates:
+                        profile_updates[name] = {
+                            'dolar': 0,
+                            'euro': 0,
+                            'zl': 0,
+                            'tl': 0
+                        }
+                    profile_updates[name]['dolar'] += row['dolar']
+                    profile_updates[name]['euro'] += row['euro']
+                    profile_updates[name]['zl'] += row['zl']
+                    profile_updates[name]['tl'] += row['tl']
 
-            break
-        except sqlite3.OperationalError as e:
-            if 'database is locked' in str(e):
-                retry_count -= 1
-                time.sleep(1)
-            else:
-                st.error(f"An error occurred: {e}")
-                break
+            # Execute batch profile updates
+            for name, updates in profile_updates.items():
+                c.execute('''
+                    INSERT OR REPLACE INTO profiles (name, balance_dolar, balance_euro, balance_zl, balance_tl)
+                    VALUES (?, COALESCE((SELECT balance_dolar FROM profiles WHERE name = ?), 0) + ?,
+                            COALESCE((SELECT balance_euro FROM profiles WHERE name = ?), 0) + ?,
+                            COALESCE((SELECT balance_zl FROM profiles WHERE name = ?), 0) + ?,
+                            COALESCE((SELECT balance_tl FROM profiles WHERE name = ?), 0) + ?)
+                ''', (name, name, updates['dolar'], name, updates['euro'], name, updates['zl'], name, updates['tl']))
+
+            conn.commit()
+
+            # Send notification for each unique transaction
+            for row in transactions_data:
+                if (row['date'], row['name'], row['vehicle']) in existing_records:
+                    kullanici = st.session_state.get("user", "Bilinmiyor")
+                    detay = f"Transaction Ekleme: {row['name']}"
+                    send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
 
 
 def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
@@ -298,7 +312,7 @@ def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, isl
         toplam_y = sum(convert_value(value) for value in values_y if 'Y' in str(value))
         toplam_m = sum(convert_value(value) for value in values_m if 'M' in str(value))
 
-        with sqlite3.connect('profiles.db', timeout=10) as conn:
+        with get_db_connection() as conn:
             c = conn.cursor()
             c.execute('SELECT COUNT(*) FROM outcomes WHERE date = ? AND arac = ? AND tir_plaka = ?',
                       (date, arac, tir_plaka))
@@ -320,14 +334,13 @@ def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, isl
 
 
 def insert_transfer(date, name, dolar, euro, commission_dolar, commission_euro):
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
         c.execute('''
             INSERT INTO transfers (date, name, dolar, euro, commission_dolar, commission_euro)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (date, name, dolar, euro, commission_dolar, commission_euro))
         conn.commit()
-
 
     kullanici = st.session_state.get("user", "Bilinmiyor")
     detay = f"Transfer Eklendi: {name}, transfer_dolar: {dolar},transfer_euro{euro} "
@@ -336,7 +349,7 @@ def insert_transfer(date, name, dolar, euro, commission_dolar, commission_euro):
 
 def insert_customer(m_no, isim, sehir, cep_tel, is_tel, firma, tel):
     try:
-        with sqlite3.connect('profiles.db', timeout=10) as conn:
+        with get_db_connection() as conn:
             c = conn.cursor()
             c.execute(
                 "INSERT OR REPLACE INTO customers (m_no, isim, sehir, cep_tel, is_tel, firma, tel) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -359,6 +372,7 @@ def process_outcomes_individually(outcomes_data):
                      'SOFOR VE EKSTR.', 'INDIRME PLN', 'BUS', 'MAZOT', 'SAKAL YOL', 'EK MASRAF', 'Açıklama']
 
     outcome_sums = {}
+    transactions_data = []
 
     # Aggregate values by date, vehicle and outcome type
     for _, row in outcomes_data.iterrows():
@@ -374,14 +388,31 @@ def process_outcomes_individually(outcomes_data):
             outcome_sums[key]['dolar'] += dolar_value
             outcome_sums[key]['euro'] += euro_value
 
-    # Insert aggregated results for each type into transactions table
+    # Prepare data for batch insert
     for (date, vehicle, outcome_type), values in outcome_sums.items():
-        insert_transaction(date, outcome_type, vehicle, "", 0, 0, values['dolar'], values['euro'], 0, 0, "")
+        if values['dolar'] != 0 or values['euro'] != 0:  # Only add if there are values
+            transactions_data.append({
+                'date': date,
+                'name': outcome_type,
+                'vehicle': vehicle,
+                'kap_number': '',
+                'unit_kg': 0,
+                'price': 0,
+                'dolar': values['dolar'],
+                'euro': values['euro'],
+                'zl': 0,
+                'tl': 0,
+                'aciklama': f"{outcome_type} - {vehicle}"
+            })
+
+    # Perform batch insert if there are transactions to insert
+    if transactions_data:
+        insert_transactions_batch(transactions_data)
 
 
 def fetch_profiles():
     """Fetch profile names from profiles table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
         c.execute('SELECT name FROM profiles')
         profiles = c.fetchall()
@@ -390,7 +421,7 @@ def fetch_profiles():
 
 def fetch_vehicles():
     """Fetch vehicle names from outcomes table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
         c.execute('SELECT DISTINCT arac FROM outcomes')
         vehicles = c.fetchall()
@@ -399,7 +430,7 @@ def fetch_vehicles():
 
 def fetch_transactions(date, profile, all_dates):
     """Fetch transaction data based on selected date and profile."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
         sql = '''
             SELECT id, date, name,
@@ -432,7 +463,7 @@ def fetch_transactions(date, profile, all_dates):
 
 
 def fetch_transfers(name_filter=None):
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
         sql = 'SELECT id, date, name, dolar, euro, commission_dolar, commission_euro FROM transfers'
         params = []
@@ -446,7 +477,7 @@ def fetch_transfers(name_filter=None):
 
 def fetch_outcomes(date, vehicle, all_dates):
     """Fetch outcomes data based on selected date and vehicle."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
 
         sql = '''
@@ -474,7 +505,7 @@ def fetch_outcomes(date, vehicle, all_dates):
 
 def fetch_monthly_summary(month, profile):
     """Fetch monthly summary from transactions table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
         sql = '''
             SELECT name,
@@ -496,7 +527,7 @@ def fetch_monthly_summary(month, profile):
 
 def fetch_yearly_summary(year, profile):
     """Fetch yearly summary from transactions table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
         sql = '''
             SELECT name,
@@ -517,7 +548,7 @@ def fetch_yearly_summary(year, profile):
 
 
 def fetch_customers(search_name=None, search_mno=None):
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
         sql = 'SELECT m_no, isim, sehir, cep_tel, is_tel, firma, tel FROM customers WHERE 1=1'
         params = []
@@ -594,7 +625,7 @@ def upload_customers_from_excel(file):
 
 def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama):
     """Update transaction data in transactions table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
         c.execute('SELECT balance_dolar, balance_euro, balance_zl, balance_tl FROM profiles WHERE name = ?', (name,))
         result = c.fetchone()
@@ -623,19 +654,16 @@ def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg,
     send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
 
 
-def update_transfer(transfer_id, date, name, dolar,euro, commission_dolar,commission_euro):
+def update_transfer(transfer_id, date, name, dolar, euro, commission_dolar, commission_euro):
     """Update transfer data in transfers table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
         c.execute('''
         UPDATE transfers
         SET date = ?, name = ?, dolar = ?, euro = ?, commission_dolar = ?,commission_euro = ?
         WHERE id = ?
-        ''', (date, name, dolar, euro, commission_dolar,commission_euro, transfer_id))
+        ''', (date, name, dolar, euro, commission_dolar, commission_euro, transfer_id))
         conn.commit()
-
-
-
 
     kullanici = st.session_state.get("user", "Bilinmiyor")
     detay = f"Transfer Güncelleme : {name}"
@@ -655,7 +683,7 @@ def update_outcome(outcome_id, date, arac, tir_plaka, ict, mer, blg, suat, komsu
     toplam_y = sum(convert_value(value) for value in values_y if 'Y' in str(value))
     toplam_m = sum(convert_value(value) for value in values_m if 'M' in str(value))
 
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
+    with get_db_connection() as conn:
         c = conn.cursor()
         c.execute('''
         UPDATE outcomes
@@ -673,7 +701,7 @@ def update_outcome(outcome_id, date, arac, tir_plaka, ict, mer, blg, suat, komsu
 
 def update_customer(m_no, isim, sehir, cep_tel, is_tel, firma, tel):
     try:
-        with sqlite3.connect('profiles.db', timeout=10) as conn:
+        with get_db_connection() as conn:
             c = conn.cursor()
             c.execute('''
                 UPDATE customers SET
@@ -695,6 +723,37 @@ def update_customer(m_no, isim, sehir, cep_tel, is_tel, firma, tel):
         st.error(f"Müşteri güncellenirken hata oluştu: {e}")
 
 
+def fetch_current_accounting(date, profile, all_dates):
+    """Fetch current accounting data based on selected date and profile."""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        sql = '''
+            SELECT id, date, name, dolar, euro, zl, tl, aciklama
+            FROM transactions
+            WHERE vehicle = '' AND kap_number = '' AND unit_kg = 0 AND price = 0
+        '''
+
+        where_clause = []
+        params = []
+
+        if not all_dates:
+            where_clause.append('date = ?')
+            params.append(date)
+
+        if profile != 'All Profiles':
+            where_clause.append('name = ?')
+            params.append(profile)
+
+        if where_clause:
+            sql += f" AND {' AND '.join(where_clause)}"
+
+        sql += ' ORDER BY date DESC'
+
+        c.execute(sql, params)
+        current_accounting = c.fetchall()
+    return current_accounting
+
+
 def show_accounting_page():
     login_kontrol()
     """Show the accounting page logic."""
@@ -713,14 +772,25 @@ def show_accounting_page():
             daily_data = pd.read_excel(uploaded_file)
             daily_data['Date'] = pd.to_datetime(daily_data['Date'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
 
+            # Prepare data for batch insert
+            transactions_data = []
             for _, row in daily_data.iterrows():
-                date, name = row['Date'], row['Name']
-                dolar = row['Dolar'] if not pd.isna(row['Dolar']) else 0
-                euro = row['Euro'] if not pd.isna(row['Euro']) else 0
-                zl = row['ZL'] if not pd.isna(row['ZL']) else 0
-                tl = row['T.L'] if not pd.isna(row['T.L']) else 0
-                aciklama = row.get('Açıklama', '')
-                insert_transaction(date, name, '', '', 0, 0, dolar, euro, zl, tl, aciklama)
+                transactions_data.append({
+                    'date': row['Date'],
+                    'name': row['Name'],
+                    'vehicle': '',
+                    'kap_number': '',
+                    'unit_kg': 0,
+                    'price': 0,
+                    'dolar': row['Dolar'] if not pd.isna(row['Dolar']) else 0,
+                    'euro': row['Euro'] if not pd.isna(row['Euro']) else 0,
+                    'zl': row['ZL'] if not pd.isna(row['ZL']) else 0,
+                    'tl': row['T.L'] if not pd.isna(row['T.L']) else 0,
+                    'aciklama': row.get('Açıklama', '')
+                })
+
+            # Perform batch insert
+            insert_transactions_batch(transactions_data)
             st.success('Transaction data uploaded successfully')
         except Exception as e:
             st.error(f"An error occurred: {e}")
@@ -740,20 +810,25 @@ def show_accounting_page():
                 income_data = pd.read_excel(xls, sheet_name='Income')
                 income_data['Date'] = pd.to_datetime(income_data['Date'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
 
+                # Prepare data for batch insert
+                transactions_data = []
                 for _, row in income_data.iterrows():
-                    date = row['Date']
-                    name = row['Name']
-                    vehicle = str(row.get('Vehicle', ''))
-                    kap_number = str(row.get('Kap-Number', ''))
-                    unit_kg = row.get('Unit-Kg', 0) if not pd.isna(row.get('Unit-Kg', 0)) else 0
-                    price = row.get('Price', 0) if not pd.isna(row.get('Price', 0)) else 0
-                    dolar = row.get('Dolar', 0) if not pd.isna(row.get('Dolar', 0)) else 0
-                    euro = row.get('Euro', 0) if not pd.isna(row.get('Euro', 0)) else 0
-                    zl = row.get('ZL', 0) if 'ZL' in row and not pd.isna(row['ZL']) else 0
-                    tl = row.get('T.L', 0) if 'T.L' in row and not pd.isna(row['T.L']) else 0
-                    aciklama = row.get('Açıklama', '')
+                    transactions_data.append({
+                        'date': row['Date'],
+                        'name': row['Name'],
+                        'vehicle': str(row.get('Vehicle', '')),
+                        'kap_number': str(row.get('Kap-Number', '')),
+                        'unit_kg': row.get('Unit-Kg', 0) if not pd.isna(row.get('Unit-Kg', 0)) else 0,
+                        'price': row.get('Price', 0) if not pd.isna(row.get('Price', 0)) else 0,
+                        'dolar': row.get('Dolar', 0) if not pd.isna(row.get('Dolar', 0)) else 0,
+                        'euro': row.get('Euro', 0) if not pd.isna(row.get('Euro', 0)) else 0,
+                        'zl': row.get('ZL', 0) if 'ZL' in row and not pd.isna(row['ZL']) else 0,
+                        'tl': row.get('T.L', 0) if 'T.L' in row and not pd.isna(row['T.L']) else 0,
+                        'aciklama': row.get('Açıklama', '')
+                    })
 
-                    insert_transaction(date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama)
+                # Perform batch insert
+                insert_transactions_batch(transactions_data)
                 st.success('Income data uploaded successfully')
 
             if 'Outcome' in xls.sheet_names:
@@ -802,12 +877,32 @@ def show_accounting_page():
 
     if selected_profile:
         try:
+            # Display Current Accounting Table
+            current_accounting = fetch_current_accounting(selected_date.strftime('%Y-%m-%d'), selected_profile,
+                                                          st.session_state.all_dates)
+            df_current = pd.DataFrame(current_accounting,
+                                      columns=["ID", "Date", "Name", "Dolar", "Euro", "ZL", "T.L", "Açıklama"])
+            df_current.fillna('', inplace=True)
+
+            st.subheader(
+                f"CARI for {selected_profile} on {'All Dates' if st.session_state.all_dates else selected_date.strftime('%d.%m.%Y')}")
+            st.write(df_current)
+
+            current_total_dolar = round(df_current['Dolar'].sum(), 2)
+            current_total_euro = round(df_current['Euro'].sum(), 2)
+            current_total_zl = round(df_current['ZL'].sum(), 2)
+            current_total_tl = round(df_current['T.L'].sum(), 2)
+
+            st.write(
+                f"Current Total: Dolar: {current_total_dolar}, Euro: {current_total_euro}, ZL: {current_total_zl}, T.L: {current_total_tl}")
+
+            # Display Transactions Table
             transactions = fetch_transactions(selected_date.strftime('%Y-%m-%d'), selected_profile,
                                               st.session_state.all_dates)
             df_transactions = pd.DataFrame(transactions,
                                            columns=["ID", "Date", "Name", "Unit-Kg", "Price", "Dolar", "Euro", "ZL",
                                                     "T.L", "Vehicle", "Kap-Number", "Açıklama"])
-            df_transactions.fillna('', inplace=True)  # Ensure no None values
+            df_transactions.fillna('', inplace=True)
             st.subheader(
                 f"Transactions for {selected_profile} on {'All Dates' if st.session_state.all_dates else selected_date.strftime('%d.%m.%Y')}")
             st.write(df_transactions)
@@ -820,6 +915,7 @@ def show_accounting_page():
 
             st.write(
                 f"Total Transactions: Dolar: {transaction_total_dolar}, Euro: {transaction_total_euro}, ZL: {transaction_total_zl}, T.L: {transaction_total_tl}, KG: {transaction_total_kg}")
+
         except Exception as e:
             st.error(f"An error occurred: {e}")
 
@@ -987,9 +1083,42 @@ def show_edit_page():
     """Show the edit data records page logic."""
     st.title("Edit Data Records")
 
-    edit_option = st.radio("Select Data Type to Edit", ("Transactions", "Transfers", "Outcomes"))
+    edit_option = st.radio("Select Data Type to Edit", ("CARİ", "Transactions", "Transfers", "Outcomes"))
 
-    if edit_option == "Transactions":
+    if edit_option == "CARİ":
+        current_accounting = fetch_current_accounting(datetime.now().strftime('%Y-%m-%d'), 'All Profiles', True)
+        df_current = pd.DataFrame(current_accounting,
+                                  columns=["ID", "Date", "Name", "Dolar", "Euro", "ZL", "T.L", "Açıklama"])
+        st.dataframe(df_current)
+
+        if not df_current.empty:
+            current_id = st.selectbox("Select CARİ ID to Edit", df_current['ID'].tolist())
+            current_row = df_current[df_current['ID'] == current_id].iloc[0]
+
+            with st.form("edit_current_form"):
+                date = st.date_input("Date", value=pd.to_datetime(current_row['Date']))
+                name = st.text_input("Name", value=current_row['Name'])
+                dolar = st.number_input("Dolar", value=float(current_row['Dolar']))
+                euro = st.number_input("Euro", value=float(current_row['Euro']))
+                zl = st.number_input("ZL", value=float(current_row['ZL']))
+                tl = st.number_input("TL", value=float(current_row['T.L']))
+                aciklama = st.text_input("Açıklama", value=current_row['Açıklama'])
+                submit_btn = st.form_submit_button("Update CARİ")
+
+                if submit_btn:
+                    update_transaction(current_id, date.strftime("%Y-%m-%d"), name, '', '', 0, 0, dolar, euro, zl, tl,
+                                       aciklama)
+                    st.success("CARİ updated successfully")
+                    # Refresh the data
+                    current_accounting = fetch_current_accounting(datetime.now().strftime('%Y-%m-%d'), 'All Profiles',
+                                                                  True)
+                    df_current = pd.DataFrame(current_accounting,
+                                              columns=["ID", "Date", "Name", "Dolar", "Euro", "ZL", "T.L", "Açıklama"])
+                    st.dataframe(df_current)
+        else:
+            st.warning("No CARİ data available for selection.")
+
+    elif edit_option == "Transactions":
         transactions = fetch_transactions(datetime.now().strftime('%Y-%m-%d'), 'All Profiles', True)
         df_transactions = pd.DataFrame(transactions,
                                        columns=["ID", "Date", "Name", "Unit-Kg", "Price", "Dolar", "Euro", "ZL", "T.L",
@@ -1023,7 +1152,8 @@ def show_edit_page():
 
     elif edit_option == "Transfers":
         transfers = fetch_transfers()
-        df_transfers = pd.DataFrame(transfers, columns=["ID", "Date", "Name","Dolar", "Euro","Komisyon Dolar", "Komisyon Euro"])
+        df_transfers = pd.DataFrame(transfers,
+                                    columns=["ID", "Date", "Name", "Dolar", "Euro", "Komisyon Dolar", "Komisyon Euro"])
         st.dataframe(df_transfers)
 
         if not df_transfers.empty:
