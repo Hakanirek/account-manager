@@ -122,13 +122,13 @@ def process_currency_value(value):
 
 
 def setup_database():
-    """Setup the SQLite database and required tables if not already present."""
+    """Setup the PostgreSQL database and required tables if not already present."""
     with get_db_connection() as conn:
         c = conn.cursor()
 
         c.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             date TEXT,
             name TEXT,
             vehicle TEXT,
@@ -154,20 +154,20 @@ def setup_database():
         ''')
 
         c.execute('''
-                    CREATE TABLE IF NOT EXISTS transfers (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        date TEXT,
-                        name TEXT,
-                        dolar REAL,
-                        euro REAL,
-                        commission_dolar REAL,
-                        commission_euro REAL
-                    )
-                ''')
+        CREATE TABLE IF NOT EXISTS transfers (
+            id SERIAL PRIMARY KEY,
+            date TEXT,
+            name TEXT,
+            dolar REAL,
+            euro REAL,
+            commission_dolar REAL,
+            commission_euro REAL
+        )
+        ''')
 
         c.execute('''
         CREATE TABLE IF NOT EXISTS outcomes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             date TEXT,
             arac TEXT,
             tir_plaka TEXT,
@@ -193,16 +193,16 @@ def setup_database():
         ''')
 
         c.execute('''
-                    CREATE TABLE IF NOT EXISTS customers (
-                        m_no INTEGER PRIMARY KEY,
-                        isim TEXT,
-                        sehir TEXT,
-                        cep_tel TEXT,
-                        is_tel TEXT,
-                        firma TEXT,
-                        tel TEXT
-                    )
-                ''')
+        CREATE TABLE IF NOT EXISTS customers (
+            m_no SERIAL PRIMARY KEY,
+            isim TEXT,
+            sehir TEXT,
+            cep_tel TEXT,
+            is_tel TEXT,
+            firma TEXT,
+            tel TEXT
+        )
+        ''')
 
         conn.commit()
 
