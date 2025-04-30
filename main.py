@@ -306,43 +306,124 @@ def insert_transactions_batch(transactions_data):
 
 def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
                    sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama):
-    """Insert data into outcomes table."""
+    """Outcome verilerini işlerken M/Y işaretlerini düzgün ayrıştırma"""
     try:
-        # Convert potential inputs to expected types, with default fallback
-        values_y = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot,
-                    sakal_yol, ek_masraf, kapı_m, aciklama]
-        values_m = [ict, mer, blg, suat, komsu, islem, islem_r, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot,
-                    sakal_yol, ek_masraf, kapı_m, aciklama]
+        # Tüm currency alanlarını işle
+        def process_field(value):
+            """M/Y işaretli değerleri parse et"""
+            if pd.isna(value) or value in ['', '0']:
+                return 0.0, 0.0
+            str_val = str(value).upper()
+            dolar = convert_value(str_val) if 'Y' in str_val else 0
+            euro = convert_value(str_val) if 'M' in str_val else 0
+            return dolar, euro
 
-        toplam_y = sum(convert_value(value) for value in values_y if 'Y' in str(value))
-        toplam_m = sum(convert_value(value) for value in values_m if 'M' in str(value))
+        # Tüm alanları işle
+        ict_dolar, ict_euro = process_field(ict)
+        mer_dolar, mer_euro = process_field(mer)
+        blg_dolar, blg_euro = process_field(blg)
+        suat_dolar, suat_euro = process_field(suat)
+        komsu_dolar, komsu_euro = process_field(komsu)
+        islem_dolar, islem_euro = process_field(islem)
+        islem_r_dolar, islem_r_euro = process_field(islem_r)
+        kapı_m_dolar, kapı_m_euro = process_field(kapı_m)
+        hamal_dolar, hamal_euro = process_field(hamal)
+        sofor_ve_ekstr_dolar, sofor_ve_ekstr_euro = process_field(sofor_ve_ekstr)
+        indirme_pln_dolar, indirme_pln_euro = process_field(indirme_pln)
+        bus_dolar, bus_euro = process_field(bus)
+        mazot_dolar, mazot_euro = process_field(mazot)
+        sakal_yol_dolar, sakal_yol_euro = process_field(sakal_yol)
+        ek_masraf_dolar, ek_masraf_euro = process_field(ek_masraf)
+
+        # Toplam hesaplamalar
+        toplam_y = sum([
+            ict_dolar, mer_dolar, blg_dolar, suat_dolar, komsu_dolar,
+            islem_dolar, islem_r_dolar, hamal_dolar, sofor_ve_ekstr_dolar,
+            indirme_pln_dolar, bus_dolar, mazot_dolar, sakal_yol_dolar,
+            ek_masraf_dolar, kapı_m_dolar
+        ])
+
+        toplam_m = sum([
+            ict_euro, mer_euro, blg_euro, suat_euro, komsu_euro,
+            islem_euro, islem_r_euro, hamal_euro, sofor_ve_ekstr_euro,
+            indirme_pln_euro, bus_euro, mazot_euro, sakal_yol_euro,
+            ek_masraf_euro, kapı_m_euro
+        ])
 
         conn = get_db_connection()
-        if conn is None:
-            return
-            
         with conn.cursor() as c:
-            c.execute('SELECT COUNT(*) FROM outcomes WHERE date = %s AND arac = %s AND tir_plaka = %s',
-                      (date, arac, tir_plaka))
-            count = c.fetchone()[0]
+            c.execute('''
+                INSERT INTO outcomes (
+                    date, arac, tir_plaka, ict, mer, blg, suat, komsu, 
+                    islem, islem_r, kapı_m, hamal, sofor_ve_ekstr, 
+                    indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama,
+                    toplam_y, toplam_m
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ''', (
+                date, arac, tir_plaka, 
+                ict, mer, blg, suat, komsu,  # Original string values
+                islem, islem_r, kapı_m, hamal, 
+                sofor_ve_ekstr, indirme_pln, bus, mazot, 
+                sakal_yol, ek_masraf, aciklama,
+                toplam_y, toplam_m
+            ))
+            conn.commit()
 
-            if count == 0:
-                c.execute(
-                    '''INSERT INTO outcomes (date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, 
-                    hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
-                    (date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr,
-                     indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m))
-                conn.commit()
+        # Transaction tablosuna yansıt
+        transactions_data = []
+        outcome_types = {
+            'ICT': (ict_dolar, ict_euro),
+            'MER': (mer_dolar, mer_euro),
+            'BLG': (blg_dolar, blg_euro),
+            'SUAT': (suat_dolar, suat_euro),
+            'KOMSU': (komsu_dolar, komsu_euro),
+            'ISLEM': (islem_dolar, islem_euro),
+            'ISLEM R': (islem_r_dolar, islem_r_euro),
+            'KAPI M': (kapı_m_dolar, kapı_m_euro),
+            'Hamal': (hamal_dolar, hamal_euro),
+            'SOFOR VE EKSTR.': (sofor_ve_ekstr_dolar, sofor_ve_ekstr_euro),
+            'INDIRME PLN': (indirme_pln_dolar, indirme_pln_euro),
+            'BUS': (bus_dolar, bus_euro),
+            'MAZOT': (mazot_dolar, mazot_euro),
+            'SAKAL YOL': (sakal_yol_dolar, sakal_yol_euro),
+            'EK MASRAF': (ek_masraf_dolar, ek_masraf_euro)
+        }
 
-        kullanici = st.session_state.get("user", "Bilinmiyor")
-        detay = f"Eklenen Gider: {arac}, tir_plaka: {tir_plaka}"
-        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+        for outcome_type, (dolar, euro) in outcome_types.items():
+            if dolar != 0 or euro != 0:
+                transactions_data.append({
+                    'date': date,
+                    'name': outcome_type,
+                    'vehicle': arac,
+                    'kap_number': '',
+                    'unit_kg': 0,
+                    'price': 0,
+                    'dolar': dolar,
+                    'euro': euro,
+                    'zl': 0,
+                    'tl': 0,
+                    'aciklama': f"{outcome_type} - {arac}"
+                })
+
+        if transactions_data:
+            insert_transactions_batch(transactions_data)
+
     except Exception as e:
-        st.error(f"An error occurred while inserting outcomes: {e}")
+        st.error(f"OUTCOME INSERT ERROR: {str(e)}")
+        raise e
     finally:
         if 'conn' in locals():
             conn.close()
+
+def convert_value(value_str):
+    """Geliştirilmiş dönüşüm fonksiyonu"""
+    try:
+        if pd.isna(value_str) or str(value_str).strip() in ['', '0']:
+            return 0.0
+        return float(re.search(r'\d+\.?\d*', str(value_str)).group())
+    except Exception as e:
+        print(f"Convert error for value '{value_str}': {str(e)}")
+        return 0.0
 
 def insert_transfer(date, name, dolar, euro, commission_dolar, commission_euro):
     conn = get_db_connection()
