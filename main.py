@@ -325,17 +325,20 @@ def insert_transactions_batch(transactions_data):
                     
                     conn.commit()
 
-    except Exception as e:
-        conn.rollback()
-        st.error(f"BATCH INSERT ERROR: {str(e)}")
-        raise e
-
-                # Send notification for each unique transaction
+                 # Send notification for each unique transaction
                 for row in transactions_data:
                     if (row['date'], row['name'], row['vehicle']) in existing_records:
                         kullanici = st.session_state.get("user", "Bilinmiyor")
                         detay = f"Transaction Ekleme: {row['name']}"
                         send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+                    
+                
+                except Exception as e:
+                    conn.rollback()
+                    st.error(f"BATCH INSERT ERROR: {str(e)}")
+                    raise e
+            
+                           
     except Exception as e:
         st.error(f"Error in insert_transactions_batch: {e}")
     finally:
