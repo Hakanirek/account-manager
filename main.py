@@ -238,60 +238,38 @@ def insert_transactions_batch(transactions_data):
                     existing_records.add((row['date'], row['name'], row['vehicle']))
 
             # Prepare the data for batch insert, excluding duplicates
+            cleaned_values = []
             for row in transactions_data:
-                c.execute('''
-                    INSERT INTO transactions (
-                        date, name, vehicle, kap_number, unit_kg, price, 
-                        dolar, euro, zl, tl, aciklama
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ''', (
-                    str(row['date']),
-                    str(row['name']),  # Name alanını string'e çevir
-                    str(row['vehicle']),
-                    str(row['kap_number']),
-                    float(row['unit_kg']),
-                    float(row['price']),
-                    float(row['dolar']),
-                    float(row['euro']),
-                    float(row['zl']),
-                    float(row['tl']),
-                    str(row['aciklama'])
-                ))
+                if (row['date'], row['name'], row['vehicle']) in existing_records:
+                    cleaned = (
+                        str(row['date']),
+                        str(row['name']),
+                        str(row['vehicle']),
+                        str(row['kap_number']),
+                        float(row['unit_kg']),
+                        float(row['price']),
+                        float(row['dolar']),
+                        float(row['euro']),
+                        float(row['zl']),
+                        float(row['tl']),
+                        str(row['aciklama'])
+                    )
+                    cleaned_values.append(cleaned)
 
-            if values:
-                
+            if cleaned_values:  # Only proceed if there are values to insert
                 try:
-                    # 1. VERİ TİPLERİNİ KONTROL ET VE DÖNÜŞTÜR
-                    cleaned_values = []
-                    for val in values:
-                        cleaned = (
-                            str(val[0]),  # date
-                            str(val[1]),  # name (BU KRİTİK DEĞİŞİM)
-                            str(val[2]),  # vehicle
-                            str(val[3]),  # kap_number
-                            float(val[4]),  # unit_kg
-                            float(val[5]),  # price
-                            float(val[6]),  # dolar
-                            float(val[7]),  # euro
-                            float(val[8]),  # zl
-                            float(val[9]),  # tl
-                            str(val[10])  # aciklama
-                        )
-                        cleaned_values.append(cleaned)
-            
-                    # 2. BATCH INSERT İŞLEMİ
+                    # Batch insert
                     c.executemany('''
                         INSERT INTO transactions (
                             date, name, vehicle, kap_number, unit_kg, price, 
                             dolar, euro, zl, tl, aciklama
                         ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ''', cleaned_values)
-            
-                    # 3. PROFİL GÜNCELLEMELERİNİ DÜZENLE
+
+                    # Profile updates
                     profile_updates = {}
                     for row in transactions_data:
-                        # NAME alanını string'e garanti et
-                        name = str(row['name'])  # BU SATIR ÖNEMLİ
+                        name = str(row['name'])
                         if name not in profile_updates:
                             profile_updates[name] = {
                                 'dolar': 0.0,
@@ -299,13 +277,12 @@ def insert_transactions_batch(transactions_data):
                                 'zl': 0.0,
                                 'tl': 0.0
                             }
-                        # Değerleri float'a çevir
                         profile_updates[name]['dolar'] += float(row['dolar'])
                         profile_updates[name]['euro'] += float(row['euro'])
                         profile_updates[name]['zl'] += float(row['zl'])
                         profile_updates[name]['tl'] += float(row['tl'])
-            
-                    # 4. POSTGRESQL UYUMLU UPDATE
+
+                    # Update profiles
                     for name, updates in profile_updates.items():
                         c.execute('''
                             INSERT INTO profiles (name, balance_dolar, balance_euro, balance_zl, balance_tl)
@@ -315,30 +292,22 @@ def insert_transactions_batch(transactions_data):
                                 balance_euro = profiles.balance_euro + EXCLUDED.balance_euro,
                                 balance_zl = profiles.balance_zl + EXCLUDED.balance_zl,
                                 balance_tl = profiles.balance_tl + EXCLUDED.balance_tl
-                        ''', (
-                            name,
-                            updates['dolar'],
-                            updates['euro'],
-                            updates['zl'],
-                            updates['tl']
-                        ))
-                    
+                        ''', (name, updates['dolar'], updates['euro'], updates['zl'], updates['tl']))
+
                     conn.commit()
 
-                 # Send notification for each unique transaction
-                for row in transactions_data:
-                    if (row['date'], row['name'], row['vehicle']) in existing_records:
-                        kullanici = st.session_state.get("user", "Bilinmiyor")
-                        detay = f"Transaction Ekleme: {row['name']}"
-                        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
-                    
-                
+                    # Send notifications
+                    for row in transactions_data:
+                        if (row['date'], row['name'], row['vehicle']) in existing_records:
+                            kullanici = st.session_state.get("user", "Bilinmiyor")
+                            detay = f"Transaction Ekleme: {row['name']}"
+                            send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+
                 except Exception as e:
                     conn.rollback()
                     st.error(f"BATCH INSERT ERROR: {str(e)}")
                     raise e
-            
-                           
+
     except Exception as e:
         st.error(f"Error in insert_transactions_batch: {e}")
     finally:
