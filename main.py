@@ -933,8 +933,7 @@ def fetch_current_accounting(date, profile, all_dates):
             sql = '''
                 SELECT id, date, name, dolar, euro, zl, tl, aciklama
                 FROM transactions
-                WHERE vehicle = '' AND kap_number = '' AND unit_kg = 0 AND price = 0
-            '''
+                WHERE vehicle = '' AND kap_number = '' AND unit_kg = 0 AND price = 0 '''
 
             where_clause = []
             params = []
