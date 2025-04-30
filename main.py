@@ -307,7 +307,7 @@ def insert_transactions_batch(transactions_data):
 def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
                    sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama):
     try:
-        # Tüm alanları parse et
+        # Parse currency values for each outcome type
         parsed = {
             'ict': convert_currency_value(ict),
             'mer': convert_currency_value(mer),
@@ -326,12 +326,13 @@ def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, isl
             'ek_masraf': convert_currency_value(ek_masraf)
         }
 
-        # Toplamları hesapla
+        # Calculate total dolar and euro
         total_dolar = sum(v[0] for v in parsed.values())
         total_euro = sum(v[1] for v in parsed.values())
 
         conn = get_db_connection()
         with conn.cursor() as c:
+            # Corrected SQL with 36 placeholders
             c.execute('''
                 INSERT INTO outcomes (
                     date, arac, tir_plaka,
@@ -352,7 +353,26 @@ def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, isl
                     ek_masraf_dolar, ek_masraf_euro,
                     aciklama,
                     toplam_dolar, toplam_euro
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ) VALUES (
+                    %s, %s, %s,   -- date, arac, tir_plaka
+                    %s, %s,       -- ict_dolar, ict_euro
+                    %s, %s,       -- mer_dolar, mer_euro
+                    %s, %s,       -- blg_dolar, blg_euro
+                    %s, %s,       -- suat_dolar, suat_euro
+                    %s, %s,       -- komsu_dolar, komsu_euro
+                    %s, %s,       -- islem_dolar, islem_euro
+                    %s, %s,       -- islem_r_dolar, islem_r_euro
+                    %s, %s,       -- kapı_m_dolar, kapı_m_euro
+                    %s, %s,       -- hamal_dolar, hamal_euro
+                    %s, %s,       -- sofor_ve_ekstr_dolar, sofor_ve_ekstr_euro
+                    %s, %s,       -- indirme_pln_dolar, indirme_pln_euro
+                    %s, %s,       -- bus_dolar, bus_euro
+                    %s, %s,       -- mazot_dolar, mazot_euro
+                    %s, %s,       -- sakal_yol_dolar, sakal_yol_euro
+                    %s, %s,       -- ek_masraf_dolar, ek_masraf_euro
+                    %s,           -- aciklama
+                    %s, %s        -- toplam_dolar, toplam_euro
+                )
             ''', (
                 date, arac, tir_plaka,
                 parsed['ict'][0], parsed['ict'][1],
@@ -375,7 +395,7 @@ def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, isl
             ))
             conn.commit()
 
-        # Transaction tablosuna yansıt
+        # Insert corresponding transactions for each outcome type
         transaction_data = []
         for field_name, (dolar, euro) in parsed.items():
             if dolar > 0 or euro > 0:
@@ -400,7 +420,8 @@ def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, isl
         st.error(f"OUTCOME INSERT ERROR: {str(e)}")
         raise e
     finally:
-        if conn: conn.close()
+        if conn: 
+            conn.close()
 
 
 def convert_value(value_str):
