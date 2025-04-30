@@ -762,7 +762,7 @@ def show_accounting_page():
         try:
             daily_data = pd.read_excel(uploaded_file)
             daily_data['Date'] = pd.to_datetime(daily_data['Date'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
-
+            daily_data['Name'] = daily_data['Name'].astype(str)
             # Prepare data for batch insert
             transactions_data = []
             for _, row in daily_data.iterrows():
@@ -800,7 +800,7 @@ def show_accounting_page():
             if 'Income' in xls.sheet_names:
                 income_data = pd.read_excel(xls, sheet_name='Income')
                 income_data['Date'] = pd.to_datetime(income_data['Date'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
-
+                income_data['Name'] = income_data['Name'].astype(str)
                 # Prepare data for batch insert
                 transactions_data = []
                 for _, row in income_data.iterrows():
