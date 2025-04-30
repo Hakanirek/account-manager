@@ -138,12 +138,12 @@ def setup_database():
                 name TEXT,
                 vehicle TEXT,
                 kap_number TEXT,
-                unit_kg DECIMAL,
-                price DECIMAL,
-                dolar DECIMAL,
-                euro DECIMAL,
-                zl DECIMAL,
-                tl DECIMAL,
+                unit_kg NUMERIC(15,2),
+                price NUMERIC(15,2),
+                dolar NUMERIC(15,2),
+                euro NUMERIC(15,2),
+                zl NUMERIC(15,2),
+                tl NUMERIC(15,2),
                 aciklama TEXT
             )
             ''')
@@ -152,10 +152,10 @@ def setup_database():
             c.execute('''
             CREATE TABLE IF NOT EXISTS profiles (
                 name TEXT PRIMARY KEY,
-                balance_dolar DECIMAL DEFAULT 0,
-                balance_euro DECIMAL DEFAULT 0,
-                balance_zl DECIMAL DEFAULT 0,
-                balance_tl DECIMAL DEFAULT 0
+                balance_dolar NUMERIC(15,2) DEFAULT 0,
+                balance_euro NUMERIC(15,2) DEFAULT 0,
+                balance_zl NUMERIC(15,2) DEFAULT 0,
+                balance_tl NUMERIC(15,2) DEFAULT 0
             )
             ''')
 
@@ -165,10 +165,10 @@ def setup_database():
                 id SERIAL PRIMARY KEY,
                 date DATE,
                 name TEXT,
-                dolar DECIMAL,
-                euro DECIMAL,
-                commission_dolar DECIMAL,
-                commission_euro DECIMAL
+                dolar NUMERIC(15,2),
+                euro NUMERIC(15,2),
+                commission_dolar NUMERIC(15,2),
+                commission_euro NUMERIC(15,2)
             )
             ''')
 
@@ -179,24 +179,24 @@ def setup_database():
                 date DATE,
                 arac TEXT,
                 tir_plaka TEXT,
-                ict DECIMAL,
-                mer DECIMAL,
-                blg DECIMAL,
-                suat DECIMAL,
-                komsu DECIMAL,
-                islem DECIMAL,
-                islem_r DECIMAL,
-                kapı_m DECIMAL,
-                hamal DECIMAL,
-                sofor_ve_ekstr DECIMAL,
-                indirme_pln DECIMAL,
-                bus DECIMAL,
-                mazot DECIMAL,
-                sakal_yol DECIMAL,
-                ek_masraf DECIMAL,
+                ict NUMERIC(15,2),
+                mer NUMERIC(15,2),
+                blg NUMERIC(15,2),
+                suat NUMERIC(15,2),
+                komsu NUMERIC(15,2),
+                islem NUMERIC(15,2),
+                islem_r NUMERIC(15,2),
+                kapı_m NUMERIC(15,2),
+                hamal NUMERIC(15,2),
+                sofor_ve_ekstr NUMERIC(15,2),
+                indirme_pln NUMERIC(15,2),
+                bus NUMERIC(15,2),
+                mazot NUMERIC(15,2),
+                sakal_yol NUMERIC(15,2),
+                ek_masraf NUMERIC(15,2),
                 aciklama TEXT,
-                toplam_y DECIMAL,
-                toplam_m DECIMAL
+                toplam_y NUMERIC(15,2),
+                toplam_m NUMERIC(15,2)
             )
             ''')
 
@@ -549,8 +549,9 @@ def fetch_transactions(date, profile, all_dates):
         with conn.cursor() as c:
             sql = '''
                 SELECT id, date, name,
-                    ROUND(SUM(unit_kg), 2) as unit_kg, ROUND(SUM(price), 2) as price,
-                    ROUND(SUM(dolar), 2) as dolar, ROUND(SUM(euro), 2) as euro, ROUND(SUM(zl), 2) as zl, ROUND(SUM(tl), 2) as tl,
+                    ROUND(CAST(SUM(unit_kg) AS numeric), 2) as unit_kg, ROUND(CAST(SUM(price) AS numeric), 2) as price,
+                    ROUND(CAST(SUM(dolar) AS numeric), 2) as dolar, ROUND(CAST(SUM(euro) AS numeric), 2) as euro, 
+                    ROUND(CAST(SUM(zl) AS numeric), 2) as zl, ROUND(CAST(SUM(tl) AS numeric), 2) as tl,
                     TRIM(string_agg(DISTINCT vehicle, ', '), ', ') as vehicle, TRIM(string_agg(DISTINCT kap_number, ', '), ', ') as kap_number,
                     TRIM(string_agg(DISTINCT aciklama, ', '), ', ') as aciklama
                 FROM transactions
@@ -651,8 +652,12 @@ def fetch_monthly_summary(month, profile):
         with conn.cursor() as c:
             sql = '''
                 SELECT name,
-                    ROUND(SUM(dolar), 2) as total_dolar, ROUND(SUM(euro), 2) as total_euro, ROUND(SUM(zl), 2) as total_zl, ROUND(SUM(tl), 2) as total_tl,
-                    ROUND(SUM(unit_kg), 2) as total_unit_kg, ROUND(SUM(price), 2) as total_price
+                    ROUND(CAST(SUM(dolar) AS numeric), 2) as total_dolar, 
+                    ROUND(CAST(SUM(euro) AS numeric), 2) as total_euro, 
+                    ROUND(CAST(SUM(zl) AS numeric), 2) as total_zl, 
+                    ROUND(CAST(SUM(tl) AS numeric), 2) as total_tl,
+                    ROUND(CAST(SUM(unit_kg) AS numeric), 2) as total_unit_kg, 
+                    ROUND(CAST(SUM(price) AS numeric), 2) as total_price
                 FROM transactions
                 WHERE EXTRACT(MONTH FROM date) = %s
             '''
@@ -682,8 +687,12 @@ def fetch_yearly_summary(year, profile):
         with conn.cursor() as c:
             sql = '''
                 SELECT name,
-                    ROUND(SUM(dolar), 2) as total_dolar, ROUND(SUM(euro), 2) as total_euro, ROUND(SUM(zl), 2) as total_zl, ROUND(SUM(tl), 2) as total_tl,
-                    ROUND(SUM(unit_kg), 2) as total_unit_kg, ROUND(SUM(price), 2) as total_price
+                    ROUND(CAST(SUM(dolar) AS numeric), 2) as total_dolar, 
+                    ROUND(CAST(SUM(euro) AS numeric), 2) as total_euro, 
+                    ROUND(CAST(SUM(zl) AS numeric), 2) as total_zl, 
+                    ROUND(CAST(SUM(tl) AS numeric), 2) as total_tl,
+                    ROUND(CAST(SUM(unit_kg) AS numeric), 2) as total_unit_kg, 
+                    ROUND(CAST(SUM(price) AS numeric), 2) as total_price
                 FROM transactions
                 WHERE EXTRACT(YEAR FROM date) = %s
             '''
