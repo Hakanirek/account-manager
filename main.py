@@ -4,17 +4,14 @@ import pandas as pd
 import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime
-import sqlite3
-import os
 import psycopg2
+import os
 from datetime import datetime
 from PIL import Image
 import base64
 from io import BytesIO
 
-
 # Base64'e çevirme fonksiyonu
-
 def image_to_base64(img_path):
     img = Image.open(img_path)
     buffer = BytesIO()
@@ -22,9 +19,7 @@ def image_to_base64(img_path):
     img_b64 = base64.b64encode(buffer.getvalue()).decode()
     return img_b64
 
-
 encoded_logo = image_to_base64("logo.png")
-
 
 def get_db_connection():
     try:
@@ -39,17 +34,14 @@ def get_db_connection():
         st.error(f"Unable to connect to the database: {e}")
         return None
 
-
-##################### LOGIN SISTEMI#############
-
+##################### LOGIN SISTEMI #############
 KULLANICI_LISTESI = {
     "User1": "pass1",
     "User2": "pass2",
     "User3": "pass3"
 }
-YONETICI_MAIL = "autonicaide@gmail.com"  # Burada bildirilecek mail adresini yaz
-MAIL_GONDER = True  # Test için False bırakabilirsiniz
-
+YONETICI_MAIL = "autonicaide@gmail.com"
+MAIL_GONDER = True
 
 def login_kontrol():
     if "user" not in st.session_state or not st.session_state["user"]:
@@ -63,7 +55,6 @@ def login_kontrol():
                 st.session_state["user"] = kullanici
                 st.success(f"Hoş geldin, {kullanici}")
                 st.rerun()
-
             else:
                 st.error("Hatalı giriş!")
         st.stop()
@@ -72,9 +63,7 @@ def login_kontrol():
         if st.sidebar.button("Çıkış Yap"):
             st.session_state["user"] = None
 
-
 ##### MAIL ##########
-
 def send_change_mail(kullanici, islemtipi, detay):
     if not MAIL_GONDER:
         return
@@ -104,16 +93,14 @@ def send_change_mail(kullanici, islemtipi, detay):
     except Exception as e:
         st.warning(f"Mail gönderilemedi: {e}")
 
-
 # Conversion rates placeholders
-CONVERSION_RATE_DOLAR = 1.0  # Placeholder conversion rate for dollars
-CONVERSION_RATE_EURO = 1.0  # Placeholder conversion rate for euros
+CONVERSION_RATE_DOLAR = 1.0
+CONVERSION_RATE_EURO = 1.0
 
 # Initialize session state variables
 for key in ['filter_option', 'all_dates']:
     if key not in st.session_state:
         st.session_state[key] = None
-
 
 def process_currency_value(value):
     """Determine numeric values based on currency identifiers."""
@@ -121,92 +108,102 @@ def process_currency_value(value):
     euro_value = convert_value(value) if 'M' in str(value) else 0
     return dolar_value, euro_value
 
-
 def setup_database():
-    """Setup the SQLite database and required tables if not already present."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
+    """Setup the PostgreSQL database tables if not already present."""
+    conn = get_db_connection()
+    if conn is None:
+        return
+    
+    try:
+        with conn.cursor() as c:
+            # Create transactions table
+            c.execute('''
+            CREATE TABLE IF NOT EXISTS transactions (
+                id SERIAL PRIMARY KEY,
+                date TEXT,
+                name TEXT,
+                vehicle TEXT,
+                kap_number TEXT,
+                unit_kg REAL,
+                price REAL,
+                dolar REAL,
+                euro REAL,
+                zl REAL,
+                tl REAL,
+                aciklama TEXT
+            )
+            ''')
 
-        c.execute('''
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            name TEXT,
-            vehicle TEXT,
-            kap_number TEXT,
-            unit_kg REAL,
-            price REAL,
-            dolar REAL,
-            euro REAL,
-            zl REAL,
-            tl REAL,
-            aciklama TEXT
-        )
-        ''')
+            # Create profiles table
+            c.execute('''
+            CREATE TABLE IF NOT EXISTS profiles (
+                name TEXT PRIMARY KEY,
+                balance_dolar REAL DEFAULT 0,
+                balance_euro REAL DEFAULT 0,
+                balance_zl REAL DEFAULT 0,
+                balance_tl REAL DEFAULT 0
+            )
+            ''')
 
-        c.execute('''
-        CREATE TABLE IF NOT EXISTS profiles (
-            name TEXT PRIMARY KEY,
-            balance_dolar REAL DEFAULT 0,
-            balance_euro REAL DEFAULT 0,
-            balance_zl REAL DEFAULT 0,
-            balance_tl REAL DEFAULT 0
-        )
-        ''')
+            # Create transfers table
+            c.execute('''
+            CREATE TABLE IF NOT EXISTS transfers (
+                id SERIAL PRIMARY KEY,
+                date TEXT,
+                name TEXT,
+                dolar REAL,
+                euro REAL,
+                commission_dolar REAL,
+                commission_euro REAL
+            )
+            ''')
 
-        c.execute('''
-                    CREATE TABLE IF NOT EXISTS transfers (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        date TEXT,
-                        name TEXT,
-                        dolar REAL,
-                        euro REAL,
-                        commission_dolar REAL,
-                        commission_euro REAL
-                    )
-                ''')
+            # Create outcomes table
+            c.execute('''
+            CREATE TABLE IF NOT EXISTS outcomes (
+                id SERIAL PRIMARY KEY,
+                date TEXT,
+                arac TEXT,
+                tir_plaka TEXT,
+                ict REAL,
+                mer REAL,
+                blg REAL,
+                suat REAL,
+                komsu REAL,
+                islem REAL,
+                islem_r REAL,
+                kapı_m REAL,
+                hamal REAL,
+                sofor_ve_ekstr REAL,
+                indirme_pln REAL,
+                bus REAL,
+                mazot REAL,
+                sakal_yol REAL,
+                ek_masraf REAL,
+                aciklama REAL,
+                toplam_y REAL,
+                toplam_m REAL
+            )
+            ''')
 
-        c.execute('''
-        CREATE TABLE IF NOT EXISTS outcomes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            arac TEXT,
-            tir_plaka TEXT,
-            ict REAL,
-            mer REAL,
-            blg REAL,
-            suat REAL,
-            komsu REAL,
-            islem REAL,
-            islem_r REAL,
-            kapı_m REAL,
-            hamal REAL,
-            sofor_ve_ekstr REAL,
-            indirme_pln REAL,
-            bus REAL,
-            mazot REAL,
-            sakal_yol REAL,
-            ek_masraf REAL,
-            aciklama REAL,
-            toplam_y REAL,
-            toplam_m REAL
-        )
-        ''')
+            # Create customers table
+            c.execute('''
+            CREATE TABLE IF NOT EXISTS customers (
+                m_no INTEGER PRIMARY KEY,
+                isim TEXT,
+                sehir TEXT,
+                cep_tel TEXT,
+                is_tel TEXT,
+                firma TEXT,
+                tel TEXT
+            )
+            ''')
 
-        c.execute('''
-                    CREATE TABLE IF NOT EXISTS customers (
-                        m_no INTEGER PRIMARY KEY,
-                        isim TEXT,
-                        sehir TEXT,
-                        cep_tel TEXT,
-                        is_tel TEXT,
-                        firma TEXT,
-                        tel TEXT
-                    )
-                ''')
-
-        conn.commit()
-
+            conn.commit()
+    except Exception as e:
+        st.error(f"Database setup error: {e}")
+    finally:
+        conn.close()
 
 def convert_value(value_str):
     """Convert a string value to a numerical value."""
@@ -221,84 +218,91 @@ def convert_value(value_str):
     except ValueError:
         return 0.0
 
-
 def insert_transactions_batch(transactions_data):
     """Insert multiple transactions in a single batch operation."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-
-        # First, check for existing records
-        existing_records = set()
-        for row in transactions_data:
-            c.execute('''
-                SELECT COUNT(*) FROM transactions 
-                WHERE date = ? AND name = ? AND vehicle = ?
-            ''', (row['date'], row['name'], row['vehicle']))
-            count = c.fetchone()[0]
-            if count == 0:
-                existing_records.add((row['date'], row['name'], row['vehicle']))
-
-        # Prepare the data for batch insert, excluding duplicates
-        values = []
-        for row in transactions_data:
-            if (row['date'], row['name'], row['vehicle']) in existing_records:
-                values.append((
-                    row['date'],
-                    row['name'],
-                    row['vehicle'],
-                    row['kap_number'],
-                    row['unit_kg'],
-                    row['price'],
-                    row['dolar'],
-                    row['euro'],
-                    row['zl'],
-                    row['tl'],
-                    row['aciklama']
-                ))
-
-        if values:
-            # Execute batch insert
-            c.executemany('''
-                INSERT INTO transactions (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', values)
-
-            # Update profiles in batch
-            profile_updates = {}
+    conn = get_db_connection()
+    if conn is None:
+        return
+    
+    try:
+        with conn.cursor() as c:
+            # First, check for existing records
+            existing_records = set()
             for row in transactions_data:
-                if (row['date'], row['name'], row['vehicle']) in existing_records:
-                    name = row['name']
-                    if name not in profile_updates:
-                        profile_updates[name] = {
-                            'dolar': 0,
-                            'euro': 0,
-                            'zl': 0,
-                            'tl': 0
-                        }
-                    profile_updates[name]['dolar'] += row['dolar']
-                    profile_updates[name]['euro'] += row['euro']
-                    profile_updates[name]['zl'] += row['zl']
-                    profile_updates[name]['tl'] += row['tl']
-
-            # Execute batch profile updates
-            for name, updates in profile_updates.items():
                 c.execute('''
-                    INSERT OR REPLACE INTO profiles (name, balance_dolar, balance_euro, balance_zl, balance_tl)
-                    VALUES (?, COALESCE((SELECT balance_dolar FROM profiles WHERE name = ?), 0) + ?,
-                            COALESCE((SELECT balance_euro FROM profiles WHERE name = ?), 0) + ?,
-                            COALESCE((SELECT balance_zl FROM profiles WHERE name = ?), 0) + ?,
-                            COALESCE((SELECT balance_tl FROM profiles WHERE name = ?), 0) + ?)
-                ''', (name, name, updates['dolar'], name, updates['euro'], name, updates['zl'], name, updates['tl']))
+                    SELECT COUNT(*) FROM transactions 
+                    WHERE date = %s AND name = %s AND vehicle = %s
+                ''', (row['date'], row['name'], row['vehicle']))
+                count = c.fetchone()[0]
+                if count == 0:
+                    existing_records.add((row['date'], row['name'], row['vehicle']))
 
-            conn.commit()
-
-            # Send notification for each unique transaction
+            # Prepare the data for batch insert, excluding duplicates
+            values = []
             for row in transactions_data:
                 if (row['date'], row['name'], row['vehicle']) in existing_records:
-                    kullanici = st.session_state.get("user", "Bilinmiyor")
-                    detay = f"Transaction Ekleme: {row['name']}"
-                    send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+                    values.append((
+                        row['date'],
+                        row['name'],
+                        row['vehicle'],
+                        row['kap_number'],
+                        row['unit_kg'],
+                        row['price'],
+                        row['dolar'],
+                        row['euro'],
+                        row['zl'],
+                        row['tl'],
+                        row['aciklama']
+                    ))
 
+            if values:
+                # Execute batch insert
+                c.executemany('''
+                    INSERT INTO transactions (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', values)
+
+                # Update profiles in batch
+                profile_updates = {}
+                for row in transactions_data:
+                    if (row['date'], row['name'], row['vehicle']) in existing_records:
+                        name = row['name']
+                        if name not in profile_updates:
+                            profile_updates[name] = {
+                                'dolar': 0,
+                                'euro': 0,
+                                'zl': 0,
+                                'tl': 0
+                            }
+                        profile_updates[name]['dolar'] += row['dolar']
+                        profile_updates[name]['euro'] += row['euro']
+                        profile_updates[name]['zl'] += row['zl']
+                        profile_updates[name]['tl'] += row['tl']
+
+                # Execute batch profile updates
+                for name, updates in profile_updates.items():
+                    c.execute('''
+                        INSERT INTO profiles (name, balance_dolar, balance_euro, balance_zl, balance_tl)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (name) DO UPDATE SET
+                            balance_dolar = profiles.balance_dolar + EXCLUDED.balance_dolar,
+                            balance_euro = profiles.balance_euro + EXCLUDED.balance_euro,
+                            balance_zl = profiles.balance_zl + EXCLUDED.balance_zl,
+                            balance_tl = profiles.balance_tl + EXCLUDED.balance_tl
+                    ''', (name, updates['dolar'], updates['euro'], updates['zl'], updates['tl']))
+
+                conn.commit()
+
+                # Send notification for each unique transaction
+                for row in transactions_data:
+                    if (row['date'], row['name'], row['vehicle']) in existing_records:
+                        kullanici = st.session_state.get("user", "Bilinmiyor")
+                        detay = f"Transaction Ekleme: {row['name']}"
+                        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+    except Exception as e:
+        st.error(f"Error in insert_transactions_batch: {e}")
+    finally:
+        conn.close()
 
 def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
                    sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama):
@@ -313,18 +317,22 @@ def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, isl
         toplam_y = sum(convert_value(value) for value in values_y if 'Y' in str(value))
         toplam_m = sum(convert_value(value) for value in values_m if 'M' in str(value))
 
-        with sqlite3.connect('profiles.db', timeout=10) as conn:
-            c = conn.cursor()
-            c.execute('SELECT COUNT(*) FROM outcomes WHERE date = ? AND arac = ? AND tir_plaka = ?',
+        conn = get_db_connection()
+        if conn is None:
+            return
+            
+        with conn.cursor() as c:
+            c.execute('SELECT COUNT(*) FROM outcomes WHERE date = %s AND arac = %s AND tir_plaka = %s',
                       (date, arac, tir_plaka))
             count = c.fetchone()[0]
 
             if count == 0:
                 c.execute(
-                    'INSERT INTO outcomes (date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    '''INSERT INTO outcomes (date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, 
+                    hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
                     (date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr,
-                     indirme_pln,
-                     bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m))
+                     indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m))
                 conn.commit()
 
         kullanici = st.session_state.get("user", "Bilinmiyor")
@@ -332,28 +340,48 @@ def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, isl
         send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
     except Exception as e:
         st.error(f"An error occurred while inserting outcomes: {e}")
-
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 def insert_transfer(date, name, dolar, euro, commission_dolar, commission_euro):
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        c.execute('''
-            INSERT INTO transfers (date, name, dolar, euro, commission_dolar, commission_euro)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (date, name, dolar, euro, commission_dolar, commission_euro))
-        conn.commit()
+    conn = get_db_connection()
+    if conn is None:
+        return
+        
+    try:
+        with conn.cursor() as c:
+            c.execute('''
+                INSERT INTO transfers (date, name, dolar, euro, commission_dolar, commission_euro)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            ''', (date, name, dolar, euro, commission_dolar, commission_euro))
+            conn.commit()
 
-    kullanici = st.session_state.get("user", "Bilinmiyor")
-    detay = f"Transfer Eklendi: {name}, transfer_dolar: {dolar},transfer_euro{euro} "
-    send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
-
+        kullanici = st.session_state.get("user", "Bilinmiyor")
+        detay = f"Transfer Eklendi: {name}, transfer_dolar: {dolar},transfer_euro{euro} "
+        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+    except Exception as e:
+        st.error(f"Error inserting transfer: {e}")
+    finally:
+        conn.close()
 
 def insert_customer(m_no, isim, sehir, cep_tel, is_tel, firma, tel):
     try:
-        with sqlite3.connect('profiles.db', timeout=10) as conn:
-            c = conn.cursor()
+        conn = get_db_connection()
+        if conn is None:
+            return
+            
+        with conn.cursor() as c:
             c.execute(
-                "INSERT OR REPLACE INTO customers (m_no, isim, sehir, cep_tel, is_tel, firma, tel) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                """INSERT INTO customers (m_no, isim, sehir, cep_tel, is_tel, firma, tel) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (m_no) DO UPDATE SET
+                    isim = EXCLUDED.isim,
+                    sehir = EXCLUDED.sehir,
+                    cep_tel = EXCLUDED.cep_tel,
+                    is_tel = EXCLUDED.is_tel,
+                    firma = EXCLUDED.firma,
+                    tel = EXCLUDED.tel""",
                 (int(m_no), isim, sehir, cep_tel, is_tel, firma, tel))
             conn.commit()
 
@@ -361,11 +389,11 @@ def insert_customer(m_no, isim, sehir, cep_tel, is_tel, firma, tel):
         kullanici = st.session_state.get("user", "Bilinmiyor")
         detay = f"Eklenen Müşteri: {isim}, M.NO: {m_no}"
         send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
-
-
     except Exception as e:
         st.error(f"Müşteri eklerken hata oluştu: {e}")
-
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 def process_outcomes_individually(outcomes_data):
     """Process each outcome by type, aggregating shared date and vehicle entries."""
@@ -410,160 +438,233 @@ def process_outcomes_individually(outcomes_data):
     if transactions_data:
         insert_transactions_batch(transactions_data)
 
-
 def fetch_profiles():
     """Fetch profile names from profiles table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        c.execute('SELECT name FROM profiles')
-        profiles = c.fetchall()
-    return ['All Profiles'] + [profile[0] for profile in profiles]
-
+    conn = get_db_connection()
+    if conn is None:
+        return ['All Profiles']
+        
+    try:
+        with conn.cursor() as c:
+            c.execute('SELECT name FROM profiles')
+            profiles = c.fetchall()
+        return ['All Profiles'] + [profile[0] for profile in profiles]
+    except Exception as e:
+        st.error(f"Error fetching profiles: {e}")
+        return ['All Profiles']
+    finally:
+        conn.close()
 
 def fetch_vehicles():
     """Fetch vehicle names from outcomes table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        c.execute('SELECT DISTINCT arac FROM outcomes')
-        vehicles = c.fetchall()
-    return ['All Vehicles'] + [vehicle[0] for vehicle in vehicles]
-
+    conn = get_db_connection()
+    if conn is None:
+        return ['All Vehicles']
+        
+    try:
+        with conn.cursor() as c:
+            c.execute('SELECT DISTINCT arac FROM outcomes')
+            vehicles = c.fetchall()
+        return ['All Vehicles'] + [vehicle[0] for vehicle in vehicles]
+    except Exception as e:
+        st.error(f"Error fetching vehicles: {e}")
+        return ['All Vehicles']
+    finally:
+        conn.close()
 
 def fetch_transactions(date, profile, all_dates):
     """Fetch transaction data based on selected date and profile."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        sql = '''
-            SELECT id, date, name,
-                ROUND(SUM(unit_kg), 2) as unit_kg, ROUND(SUM(price), 2) as price,
-                ROUND(SUM(dolar), 2) as dolar, ROUND(SUM(euro), 2) as euro, ROUND(SUM(zl), 2) as zl, ROUND(SUM(tl), 2) as tl,
-                TRIM(GROUP_CONCAT(DISTINCT vehicle), ', ') as vehicle, TRIM(GROUP_CONCAT(DISTINCT kap_number), ', ') as kap_number,
-                TRIM(GROUP_CONCAT(DISTINCT aciklama), ', ') as aciklama
-            FROM transactions
-        '''
+    conn = get_db_connection()
+    if conn is None:
+        return []
+        
+    try:
+        with conn.cursor() as c:
+            sql = '''
+                SELECT id, date, name,
+                    ROUND(SUM(unit_kg)::numeric, 2) as unit_kg, ROUND(SUM(price)::numeric, 2) as price,
+                    ROUND(SUM(dolar)::numeric, 2) as dolar, ROUND(SUM(euro)::numeric, 2) as euro, 
+                    ROUND(SUM(zl)::numeric, 2) as zl, ROUND(SUM(tl)::numeric, 2) as tl,
+                    STRING_AGG(DISTINCT vehicle, ', ') as vehicle, 
+                    STRING_AGG(DISTINCT kap_number, ', ') as kap_number,
+                    STRING_AGG(DISTINCT aciklama, ', ') as aciklama
+                FROM transactions
+            '''
 
-        where_clause = []
-        params = []
+            where_clause = []
+            params = []
 
-        if not all_dates:
-            where_clause.append('date = ?')
-            params.append(date)
+            if not all_dates:
+                where_clause.append('date = %s')
+                params.append(date)
 
-        if profile != 'All Profiles':
-            where_clause.append('name = ?')
-            params.append(profile)
+            if profile != 'All Profiles':
+                where_clause.append('name = %s')
+                params.append(profile)
 
-        if where_clause:
-            sql += f" WHERE {' AND '.join(where_clause)}"
+            if where_clause:
+                sql += f" WHERE {' AND '.join(where_clause)}"
 
-        sql += ' GROUP BY date, name'
+            sql += ' GROUP BY date, name, id'
 
-        c.execute(sql, params)
-        transactions = c.fetchall()
-    return transactions
-
+            c.execute(sql, params)
+            transactions = c.fetchall()
+        return transactions
+    except Exception as e:
+        st.error(f"Error fetching transactions: {e}")
+        return []
+    finally:
+        conn.close()
 
 def fetch_transfers(name_filter=None):
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        sql = 'SELECT id, date, name, dolar, euro, commission_dolar, commission_euro FROM transfers'
-        params = []
-        if name_filter:
-            sql += ' WHERE LOWER(name) LIKE ?'
-            params.append(f'%{name_filter.lower()}%')
-        c.execute(sql, params)
-        transfers = c.fetchall()
-    return transfers
-
+    conn = get_db_connection()
+    if conn is None:
+        return []
+        
+    try:
+        with conn.cursor() as c:
+            sql = 'SELECT id, date, name, dolar, euro, commission_dolar, commission_euro FROM transfers'
+            params = []
+            if name_filter:
+                sql += ' WHERE LOWER(name) LIKE %s'
+                params.append(f'%{name_filter.lower()}%')
+            c.execute(sql, params)
+            transfers = c.fetchall()
+        return transfers
+    except Exception as e:
+        st.error(f"Error fetching transfers: {e}")
+        return []
+    finally:
+        conn.close()
 
 def fetch_outcomes(date, vehicle, all_dates):
     """Fetch outcomes data based on selected date and vehicle."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
+    conn = get_db_connection()
+    if conn is None:
+        return []
+        
+    try:
+        with conn.cursor() as c:
+            sql = '''
+                SELECT DISTINCT id, date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, 
+                sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m
+                FROM outcomes
+            '''
 
-        sql = '''
-            SELECT DISTINCT id, date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m
-            FROM outcomes
-        '''
-
-        if all_dates:
-            if vehicle != 'All Vehicles':
-                sql += ' WHERE arac = ?'
-                c.execute(sql, (vehicle,))
+            if all_dates:
+                if vehicle != 'All Vehicles':
+                    sql += ' WHERE arac = %s'
+                    c.execute(sql, (vehicle,))
+                else:
+                    c.execute(sql)
             else:
-                c.execute(sql)
-        else:
-            if vehicle != 'All Vehicles':
-                sql += ' WHERE date = ? AND arac = ?'
-                c.execute(sql, (date, vehicle))
-            else:
-                sql += ' WHERE date = ?'
-                c.execute(sql, (date,))
+                if vehicle != 'All Vehicles':
+                    sql += ' WHERE date = %s AND arac = %s'
+                    c.execute(sql, (date, vehicle))
+                else:
+                    sql += ' WHERE date = %s'
+                    c.execute(sql, (date,))
 
-        outcomes = c.fetchall()
-    return outcomes
-
+            outcomes = c.fetchall()
+        return outcomes
+    except Exception as e:
+        st.error(f"Error fetching outcomes: {e}")
+        return []
+    finally:
+        conn.close()
 
 def fetch_monthly_summary(month, profile):
     """Fetch monthly summary from transactions table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        sql = '''
-            SELECT name,
-                ROUND(SUM(dolar), 2) as total_dolar, ROUND(SUM(euro), 2) as total_euro, ROUND(SUM(zl), 2) as total_zl, ROUND(SUM(tl), 2) as total_tl,
-                ROUND(SUM(unit_kg), 2) as total_unit_kg, ROUND(SUM(price), 2) as total_price
-            FROM transactions
-            WHERE strftime("%m", date) = ?
-        '''
-        if profile == 'All Profiles':
-            sql += ' GROUP BY name'
-            c.execute(sql, (month,))
-        else:
-            sql += ' AND name = ? GROUP BY name'
-            c.execute(sql, (month, profile))
+    conn = get_db_connection()
+    if conn is None:
+        return []
+        
+    try:
+        with conn.cursor() as c:
+            sql = '''
+                SELECT name,
+                    ROUND(SUM(dolar)::numeric, 2) as total_dolar, 
+                    ROUND(SUM(euro)::numeric, 2) as total_euro, 
+                    ROUND(SUM(zl)::numeric, 2) as total_zl, 
+                    ROUND(SUM(tl)::numeric, 2) as total_tl,
+                    ROUND(SUM(unit_kg)::numeric, 2) as total_unit_kg, 
+                    ROUND(SUM(price)::numeric, 2) as total_price
+                FROM transactions
+                WHERE EXTRACT(MONTH FROM date::date) = %s
+            '''
+            if profile == 'All Profiles':
+                sql += ' GROUP BY name'
+                c.execute(sql, (month,))
+            else:
+                sql += ' AND name = %s GROUP BY name'
+                c.execute(sql, (month, profile))
 
-        monthly_summary = c.fetchall()
-    return monthly_summary
-
+            monthly_summary = c.fetchall()
+        return monthly_summary
+    except Exception as e:
+        st.error(f"Error fetching monthly summary: {e}")
+        return []
+    finally:
+        conn.close()
 
 def fetch_yearly_summary(year, profile):
     """Fetch yearly summary from transactions table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        sql = '''
-            SELECT name,
-                ROUND(SUM(dolar), 2) as total_dolar, ROUND(SUM(euro), 2) as total_euro, ROUND(SUM(zl), 2) as total_zl, ROUND(SUM(tl), 2) as total_tl,
-                ROUND(SUM(unit_kg), 2) as total_unit_kg, ROUND(SUM(price), 2) as total_price
-            FROM transactions
-            WHERE strftime("%Y", date) = ?
-        '''
-        if profile == 'All Profiles':
-            sql += ' GROUP BY name'
-            c.execute(sql, (year,))
-        else:
-            sql += ' AND name = ? GROUP BY name'
-            c.execute(sql, (year, profile))
+    conn = get_db_connection()
+    if conn is None:
+        return []
+        
+    try:
+        with conn.cursor() as c:
+            sql = '''
+                SELECT name,
+                    ROUND(SUM(dolar)::numeric, 2) as total_dolar, 
+                    ROUND(SUM(euro)::numeric, 2) as total_euro, 
+                    ROUND(SUM(zl)::numeric, 2) as total_zl, 
+                    ROUND(SUM(tl)::numeric, 2) as total_tl,
+                    ROUND(SUM(unit_kg)::numeric, 2) as total_unit_kg, 
+                    ROUND(SUM(price)::numeric, 2) as total_price
+                FROM transactions
+                WHERE EXTRACT(YEAR FROM date::date) = %s
+            '''
+            if profile == 'All Profiles':
+                sql += ' GROUP BY name'
+                c.execute(sql, (year,))
+            else:
+                sql += ' AND name = %s GROUP BY name'
+                c.execute(sql, (year, profile))
 
-        yearly_summary = c.fetchall()
-    return yearly_summary
-
+            yearly_summary = c.fetchall()
+        return yearly_summary
+    except Exception as e:
+        st.error(f"Error fetching yearly summary: {e}")
+        return []
+    finally:
+        conn.close()
 
 def fetch_customers(search_name=None, search_mno=None):
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        sql = 'SELECT m_no, isim, sehir, cep_tel, is_tel, firma, tel FROM customers WHERE 1=1'
-        params = []
-        if search_name:
-            sql += ' AND lower(isim) LIKE ?'
-            params.append(f'%{search_name.lower()}%')
-        if search_mno:
-            sql += ' AND m_no = ?'
-            params.append(int(search_mno))
-        sql += ' ORDER BY m_no ASC'
-        c.execute(sql, params)
-        customers = c.fetchall()
-    return customers
-
+    conn = get_db_connection()
+    if conn is None:
+        return []
+        
+    try:
+        with conn.cursor() as c:
+            sql = 'SELECT m_no, isim, sehir, cep_tel, is_tel, firma, tel FROM customers WHERE 1=1'
+            params = []
+            if search_name:
+                sql += ' AND lower(isim) LIKE %s'
+                params.append(f'%{search_name.lower()}%')
+            if search_mno:
+                sql += ' AND m_no = %s'
+                params.append(int(search_mno))
+            sql += ' ORDER BY m_no ASC'
+            c.execute(sql, params)
+            customers = c.fetchall()
+        return customers
+    except Exception as e:
+        st.error(f"Error fetching customers: {e}")
+        return []
+    finally:
+        conn.close()
 
 def upload_transfers_from_excel(file):
     try:
@@ -599,7 +700,6 @@ def upload_transfers_from_excel(file):
     except Exception as e:
         st.error(f"Transfer excel yüklemesi hatası: {e}")
 
-
 def upload_customers_from_excel(file):
     try:
         df = pd.read_excel(file, dtype=str)
@@ -623,53 +723,67 @@ def upload_customers_from_excel(file):
     except Exception as e:
         st.error(f"Excel yüklenirken hata oluştu: {e}")
 
-
 def update_transaction(transaction_id, date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama):
     """Update transaction data in transactions table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        c.execute('SELECT balance_dolar, balance_euro, balance_zl, balance_tl FROM profiles WHERE name = ?', (name,))
-        result = c.fetchone()
-        if result:
-            c.execute('SELECT dolar, euro, zl, tl FROM transactions WHERE id = ?', (transaction_id,))
-            old_values = c.fetchone()
-            if old_values:
-                old_dolar, old_euro, old_zl, old_tl = old_values
-                new_balance_dolar = (result[0] or 0) - old_dolar + dolar
-                new_balance_euro = (result[1] or 0) - old_euro + euro
-                new_balance_zl = (result[2] or 0) - old_zl + zl
-                new_balance_tl = (result[3] or 0) - old_tl + tl
-                c.execute(
-                    'UPDATE profiles SET balance_dolar = ?, balance_euro = ?, balance_zl = ?, balance_tl = ? WHERE name = ?',
-                    (new_balance_dolar, new_balance_euro, new_balance_zl, new_balance_tl, name))
+    conn = get_db_connection()
+    if conn is None:
+        return
+        
+    try:
+        with conn.cursor() as c:
+            c.execute('SELECT balance_dolar, balance_euro, balance_zl, balance_tl FROM profiles WHERE name = %s', (name,))
+            result = c.fetchone()
+            if result:
+                c.execute('SELECT dolar, euro, zl, tl FROM transactions WHERE id = %s', (transaction_id,))
+                old_values = c.fetchone()
+                if old_values:
+                    old_dolar, old_euro, old_zl, old_tl = old_values
+                    new_balance_dolar = (result[0] or 0) - old_dolar + dolar
+                    new_balance_euro = (result[1] or 0) - old_euro + euro
+                    new_balance_zl = (result[2] or 0) - old_zl + zl
+                    new_balance_tl = (result[3] or 0) - old_tl + tl
+                    c.execute(
+                        'UPDATE profiles SET balance_dolar = %s, balance_euro = %s, balance_zl = %s, balance_tl = %s WHERE name = %s',
+                        (new_balance_dolar, new_balance_euro, new_balance_zl, new_balance_tl, name))
 
-        c.execute('''
-        UPDATE transactions
-        SET date = ?, name = ?, vehicle = ?, kap_number = ?, unit_kg = ?, price = ?, dolar = ?, euro = ?, zl = ?, tl = ?, aciklama = ?
-        WHERE id = ?
-        ''', (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama, transaction_id))
-        conn.commit()
+            c.execute('''
+            UPDATE transactions
+            SET date = %s, name = %s, vehicle = %s, kap_number = %s, unit_kg = %s, price = %s, 
+                dolar = %s, euro = %s, zl = %s, tl = %s, aciklama = %s
+            WHERE id = %s
+            ''', (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama, transaction_id))
+            conn.commit()
 
-    kullanici = st.session_state.get("user", "Bilinmiyor")
-    detay = f"Transaction Güncelleme : {name}"
-    send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
-
+        kullanici = st.session_state.get("user", "Bilinmiyor")
+        detay = f"Transaction Güncelleme : {name}"
+        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+    except Exception as e:
+        st.error(f"Error updating transaction: {e}")
+    finally:
+        conn.close()
 
 def update_transfer(transfer_id, date, name, dolar, euro, commission_dolar, commission_euro):
     """Update transfer data in transfers table."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        c.execute('''
-        UPDATE transfers
-        SET date = ?, name = ?, dolar = ?, euro = ?, commission_dolar = ?,commission_euro = ?
-        WHERE id = ?
-        ''', (date, name, dolar, euro, commission_dolar, commission_euro, transfer_id))
-        conn.commit()
+    conn = get_db_connection()
+    if conn is None:
+        return
+        
+    try:
+        with conn.cursor() as c:
+            c.execute('''
+            UPDATE transfers
+            SET date = %s, name = %s, dolar = %s, euro = %s, commission_dolar = %s, commission_euro = %s
+            WHERE id = %s
+            ''', (date, name, dolar, euro, commission_dolar, commission_euro, transfer_id))
+            conn.commit()
 
-    kullanici = st.session_state.get("user", "Bilinmiyor")
-    detay = f"Transfer Güncelleme : {name}"
-    send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
-
+        kullanici = st.session_state.get("user", "Bilinmiyor")
+        detay = f"Transfer Güncelleme : {name}"
+        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+    except Exception as e:
+        st.error(f"Error updating transfer: {e}")
+    finally:
+        conn.close()
 
 def update_outcome(outcome_id, date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal,
                    sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama):
@@ -684,76 +798,97 @@ def update_outcome(outcome_id, date, arac, tir_plaka, ict, mer, blg, suat, komsu
     toplam_y = sum(convert_value(value) for value in values_y if 'Y' in str(value))
     toplam_m = sum(convert_value(value) for value in values_m if 'M' in str(value))
 
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        c.execute('''
-        UPDATE outcomes
-        SET date = ?, arac = ?, tir_plaka = ?, ict = ?, mer = ?, blg = ?, suat = ?, komsu = ?, islem = ?, islem_r = ?, kapı_m = ?, hamal = ?, sofor_ve_ekstr = ?, indirme_pln = ?, bus = ?, mazot = ?, sakal_yol = ?, ek_masraf = ?, aciklama = ?, toplam_y = ?, toplam_m = ?
-        WHERE id = ?
-        ''', (
-            date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr,
-            indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m, outcome_id))
-        conn.commit()
+    conn = get_db_connection()
+    if conn is None:
+        return
+        
+    try:
+        with conn.cursor() as c:
+            c.execute('''
+            UPDATE outcomes
+            SET date = %s, arac = %s, tir_plaka = %s, ict = %s, mer = %s, blg = %s, suat = %s, komsu = %s, 
+                islem = %s, islem_r = %s, kapı_m = %s, hamal = %s, sofor_ve_ekstr = %s, indirme_pln = %s, 
+                bus = %s, mazot = %s, sakal_yol = %s, ek_masraf = %s, aciklama = %s, toplam_y = %s, toplam_m = %s
+            WHERE id = %s
+            ''', (
+                date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr,
+                indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m, outcome_id))
+            conn.commit()
 
-    kullanici = st.session_state.get("user", "Bilinmiyor")
-    detay = f"Gider Güncelleme : {arac}, tir_plaka: {tir_plaka} "
-    send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
-
+        kullanici = st.session_state.get("user", "Bilinmiyor")
+        detay = f"Gider Güncelleme : {arac}, tir_plaka: {tir_plaka} "
+        send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
+    except Exception as e:
+        st.error(f"Error updating outcome: {e}")
+    finally:
+        conn.close()
 
 def update_customer(m_no, isim, sehir, cep_tel, is_tel, firma, tel):
     try:
-        with sqlite3.connect('profiles.db', timeout=10) as conn:
-            c = conn.cursor()
+        conn = get_db_connection()
+        if conn is None:
+            return
+            
+        with conn.cursor() as c:
             c.execute('''
                 UPDATE customers SET
-                  isim = ?,
-                  sehir = ?,
-                  cep_tel = ?,
-                  is_tel = ?,
-                  firma = ?,
-                  tel = ?
-                WHERE m_no = ?
+                  isim = %s,
+                  sehir = %s,
+                  cep_tel = %s,
+                  is_tel = %s,
+                  firma = %s,
+                  tel = %s
+                WHERE m_no = %s
             ''', (isim, sehir, cep_tel, is_tel, firma, tel, int(m_no)))
             conn.commit()
 
         kullanici = st.session_state.get("user", "Bilinmiyor")
         detay = f"Müşteri Güncellemesi : {isim}, M.NO: {m_no}"
         send_change_mail(kullanici, "Müşteri Kaydı/Güncelleme", detay)
-
     except Exception as e:
-        st.error(f"Müşteri güncellenirken hata oluştu: {e}")
-
+        st.error(f"Error updating customer: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 def fetch_current_accounting(date, profile, all_dates):
     """Fetch current accounting data based on selected date and profile."""
-    with sqlite3.connect('profiles.db', timeout=10) as conn:
-        c = conn.cursor()
-        sql = '''
-            SELECT id, date, name, dolar, euro, zl, tl, aciklama
-            FROM transactions
-            WHERE vehicle = '' AND kap_number = '' AND unit_kg = 0 AND price = 0
-        '''
+    conn = get_db_connection()
+    if conn is None:
+        return []
+        
+    try:
+        with conn.cursor() as c:
+            sql = '''
+                SELECT id, date, name, dolar, euro, zl, tl, aciklama
+                FROM transactions
+                WHERE vehicle = '' AND kap_number = '' AND unit_kg = 0 AND price = 0
+            '''
 
-        where_clause = []
-        params = []
+            where_clause = []
+            params = []
 
-        if not all_dates:
-            where_clause.append('date = ?')
-            params.append(date)
+            if not all_dates:
+                where_clause.append('date = %s')
+                params.append(date)
 
-        if profile != 'All Profiles':
-            where_clause.append('name = ?')
-            params.append(profile)
+            if profile != 'All Profiles':
+                where_clause.append('name = %s')
+                params.append(profile)
 
-        if where_clause:
-            sql += f" AND {' AND '.join(where_clause)}"
+            if where_clause:
+                sql += f" AND {' AND '.join(where_clause)}"
 
-        sql += ' ORDER BY date DESC'
+            sql += ' ORDER BY date DESC'
 
-        c.execute(sql, params)
-        current_accounting = c.fetchall()
-    return current_accounting
-
+            c.execute(sql, params)
+            current_accounting = c.fetchall()
+        return current_accounting
+    except Exception as e:
+        st.error(f"Error fetching current accounting: {e}")
+        return []
+    finally:
+        conn.close()
 
 def show_accounting_page():
     login_kontrol()
@@ -1014,7 +1149,6 @@ def show_accounting_page():
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
-
 def show_transfer_page():
     login_kontrol()
 
@@ -1076,7 +1210,6 @@ def show_transfer_page():
         st.markdown("#### Toplamlar (Listedeki kayıtlar için):")
         for k, v in totals.items():
             st.write(f"{k}: {v:.2f}")
-
 
 def show_edit_page():
     login_kontrol()
@@ -1249,7 +1382,6 @@ def show_edit_page():
         else:
             st.warning("No outcomes available for selection.")
 
-
 def show_customers_page():
     login_kontrol()
     st.title("Müşteri Bilgileri Yönetimi")
@@ -1336,13 +1468,10 @@ def show_customers_page():
                     # Güncellemeden sonra formu kapatmak için:
                     st.session_state["edit_open"] = False
 
-
+# Main application setup
 setup_database()
 
 # Place the logo at the top of the sidebar
-# Load the logo image
-logo = Image.open("logo.png")
-
 with st.sidebar:
     st.markdown(
         f"""
