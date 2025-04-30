@@ -259,70 +259,71 @@ def insert_transactions_batch(transactions_data):
                 ))
 
             if values:
-    try:
-        # 1. VERİ TİPLERİNİ KONTROL ET VE DÖNÜŞTÜR
-        cleaned_values = []
-        for val in values:
-            cleaned = (
-                str(val[0]),  # date
-                str(val[1]),  # name (BU KRİTİK DEĞİŞİM)
-                str(val[2]),  # vehicle
-                str(val[3]),  # kap_number
-                float(val[4]),  # unit_kg
-                float(val[5]),  # price
-                float(val[6]),  # dolar
-                float(val[7]),  # euro
-                float(val[8]),  # zl
-                float(val[9]),  # tl
-                str(val[10])  # aciklama
-            )
-            cleaned_values.append(cleaned)
-
-        # 2. BATCH INSERT İŞLEMİ
-        c.executemany('''
-            INSERT INTO transactions (
-                date, name, vehicle, kap_number, unit_kg, price, 
-                dolar, euro, zl, tl, aciklama
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        ''', cleaned_values)
-
-        # 3. PROFİL GÜNCELLEMELERİNİ DÜZENLE
-        profile_updates = {}
-        for row in transactions_data:
-            # NAME alanını string'e garanti et
-            name = str(row['name'])  # BU SATIR ÖNEMLİ
-            if name not in profile_updates:
-                profile_updates[name] = {
-                    'dolar': 0.0,
-                    'euro': 0.0,
-                    'zl': 0.0,
-                    'tl': 0.0
-                }
-            # Değerleri float'a çevir
-            profile_updates[name]['dolar'] += float(row['dolar'])
-            profile_updates[name]['euro'] += float(row['euro'])
-            profile_updates[name]['zl'] += float(row['zl'])
-            profile_updates[name]['tl'] += float(row['tl'])
-
-        # 4. POSTGRESQL UYUMLU UPDATE
-        for name, updates in profile_updates.items():
-            c.execute('''
-                INSERT INTO profiles (name, balance_dolar, balance_euro, balance_zl, balance_tl)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (name) DO UPDATE SET
-                    balance_dolar = profiles.balance_dolar + EXCLUDED.balance_dolar,
-                    balance_euro = profiles.balance_euro + EXCLUDED.balance_euro,
-                    balance_zl = profiles.balance_zl + EXCLUDED.balance_zl,
-                    balance_tl = profiles.balance_tl + EXCLUDED.balance_tl
-            ''', (
-                name,
-                updates['dolar'],
-                updates['euro'],
-                updates['zl'],
-                updates['tl']
-            ))
-        
-        conn.commit()
+                
+                try:
+                    # 1. VERİ TİPLERİNİ KONTROL ET VE DÖNÜŞTÜR
+                    cleaned_values = []
+                    for val in values:
+                        cleaned = (
+                            str(val[0]),  # date
+                            str(val[1]),  # name (BU KRİTİK DEĞİŞİM)
+                            str(val[2]),  # vehicle
+                            str(val[3]),  # kap_number
+                            float(val[4]),  # unit_kg
+                            float(val[5]),  # price
+                            float(val[6]),  # dolar
+                            float(val[7]),  # euro
+                            float(val[8]),  # zl
+                            float(val[9]),  # tl
+                            str(val[10])  # aciklama
+                        )
+                        cleaned_values.append(cleaned)
+            
+                    # 2. BATCH INSERT İŞLEMİ
+                    c.executemany('''
+                        INSERT INTO transactions (
+                            date, name, vehicle, kap_number, unit_kg, price, 
+                            dolar, euro, zl, tl, aciklama
+                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ''', cleaned_values)
+            
+                    # 3. PROFİL GÜNCELLEMELERİNİ DÜZENLE
+                    profile_updates = {}
+                    for row in transactions_data:
+                        # NAME alanını string'e garanti et
+                        name = str(row['name'])  # BU SATIR ÖNEMLİ
+                        if name not in profile_updates:
+                            profile_updates[name] = {
+                                'dolar': 0.0,
+                                'euro': 0.0,
+                                'zl': 0.0,
+                                'tl': 0.0
+                            }
+                        # Değerleri float'a çevir
+                        profile_updates[name]['dolar'] += float(row['dolar'])
+                        profile_updates[name]['euro'] += float(row['euro'])
+                        profile_updates[name]['zl'] += float(row['zl'])
+                        profile_updates[name]['tl'] += float(row['tl'])
+            
+                    # 4. POSTGRESQL UYUMLU UPDATE
+                    for name, updates in profile_updates.items():
+                        c.execute('''
+                            INSERT INTO profiles (name, balance_dolar, balance_euro, balance_zl, balance_tl)
+                            VALUES (%s, %s, %s, %s, %s)
+                            ON CONFLICT (name) DO UPDATE SET
+                                balance_dolar = profiles.balance_dolar + EXCLUDED.balance_dolar,
+                                balance_euro = profiles.balance_euro + EXCLUDED.balance_euro,
+                                balance_zl = profiles.balance_zl + EXCLUDED.balance_zl,
+                                balance_tl = profiles.balance_tl + EXCLUDED.balance_tl
+                        ''', (
+                            name,
+                            updates['dolar'],
+                            updates['euro'],
+                            updates['zl'],
+                            updates['tl']
+                        ))
+                    
+                    conn.commit()
 
     except Exception as e:
         conn.rollback()
