@@ -214,7 +214,7 @@ def setup_database():
                     toplam_dolar REAL,
                     toplam_euro REAL
                 )
-
+                ''')
             # Create customers table
             c.execute('''
             CREATE TABLE IF NOT EXISTS customers (
