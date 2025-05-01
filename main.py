@@ -275,16 +275,25 @@ def setup_database():
                 ''')
             # Create customers table
             c.execute('''
-            CREATE TABLE IF NOT EXISTS customers (
-                m_no INTEGER PRIMARY KEY,
-                isim TEXT,
-                sehir TEXT,
-                cep_tel TEXT,
-                is_tel TEXT,
-                firma TEXT,
-                tel TEXT
-            )
-            ''')
+                CREATE TABLE IF NOT EXISTS customers (
+                    m_no INTEGER PRIMARY KEY,
+                    isim TEXT,
+                    sehir TEXT,
+                    cep_tel TEXT,
+                    is_tel TEXT,
+                    firma TEXT,
+                    tel TEXT
+                )
+                ''')
+
+            try:
+                c.execute('''
+                    ALTER TABLE outcomes
+                    ADD CONSTRAINT outcomes_unique_unique UNIQUE (date, arac, tir_plaka)
+                ''')
+            except Exception:
+                pass  # constraint zaten varsa ya da eklenemiyorsa hata alma
+            
 
             conn.commit()
     except Exception as e:
