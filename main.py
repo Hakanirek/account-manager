@@ -1508,12 +1508,18 @@ def show_edit_page():
         st.session_state.all_dates = st.checkbox("Show All Dates", value=st.session_state.all_dates)
 
         outcomes = fetch_outcomes(selected_date.strftime('%Y-%m-%d'), 'All Vehicles', st.session_state.all_dates)
-        df_outcomes = pd.DataFrame(outcomes,
-                                   columns=["ID", "Date", "Araç", "Tır Plaka", "ICT", "MER", "BLG", "SUAT", "KOMSU",
-                                            "ISLEM", "ISLEM R", "KAPI M", "Hamal", "SOFOR VE EKSTR.", "INDIRME PLN",
-                                            "BUS",
-                                            "MAZOT", "SAKAL YOL", "EK MASRAF", "Açıklama", "Toplam Dolar",
-                                            "Toplam Euro"])
+        outcome_columns_df = [
+            "ID", "Date", "Araç", "Tır Plaka",
+            "ict_dolar", "ict_euro", "mer_dolar", "mer_euro", "blg_dolar", "blg_euro",
+            "suat_dolar", "suat_euro", "komsu_dolar", "komsu_euro",
+            "islem_dolar", "islem_euro", "islem_r_dolar", "islem_r_euro",
+            "kapı_m_dolar", "kapı_m_euro", "hamal_dolar", "hamal_euro",
+            "sofor_ve_ekstr_dolar", "sofor_ve_ekstr_euro", "indirme_pln_dolar", "indirme_pln_euro",
+            "bus_dolar", "bus_euro", "mazot_dolar", "mazot_euro",
+            "sakal_yol_dolar", "sakal_yol_euro", "ek_masraf_dolar", "ek_masraf_euro",
+            "Açıklama", "Toplam Dolar", "Toplam Euro"
+        ]
+        df_outcomes = pd.DataFrame(outcomes, columns=outcome_columns_df)
         st.dataframe(df_outcomes)
 
         if not df_outcomes.empty:
