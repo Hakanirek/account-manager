@@ -220,6 +220,7 @@ def setup_database():
                     UNIQUE (date, name, vehicle, kap_number)
                 ''')
             except Exception as err:
+                conn.rollback()
                 pass
 
             # Create profiles table
@@ -292,6 +293,7 @@ def setup_database():
                     ADD CONSTRAINT outcomes_unique_unique UNIQUE (date, arac, tir_plaka)
                 ''')
             except Exception:
+                conn.rollback()
                 pass  # constraint zaten varsa ya da eklenemiyorsa hata alma
             
 
@@ -1249,7 +1251,7 @@ def show_accounting_page():
             converted_values_m = df_outcomes["Toplam Euro"]
             total_value_m = converted_values_m.sum()
 
-            st.write(f"Total Dolar: {total :.2f}")
+            st.write(f"Total Dolar: {total_value_y :.2f}")
             st.write(f"Total Euro: {total_value_m:.2f}")
 
         elif filter_option in df_outcomes.columns:
