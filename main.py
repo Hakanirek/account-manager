@@ -1074,7 +1074,6 @@ def fetch_current_accounting(date, profile, all_dates):
 
 def show_accounting_page():
     login_kontrol()
-    """Show the accounting page logic."""
     st.title("Accounting Program")
     st.info("İşlemlerinizi toplu Excel yüklemesi veya manuel olarak ekleyebilirsiniz.\n"
             "Ayrıca ad, tarih ve araca göre arama ve filtreleme yapabilirsiniz.\n"
