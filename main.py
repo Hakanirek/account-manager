@@ -130,6 +130,52 @@ def convert_currency_value(value):
         # Para birimi belirtilmemişse varsayılan olarak EURO kabul edelim
         return 0.0, numeric_value
 
+def pretty_currency(y, m):
+    y = float(y) if y is not None else 0
+    m = float(m) if m is not None else 0
+    if y != 0:
+        return f"{y}Y"
+    elif m != 0:
+        return f"{m}M"
+    else:
+        return ""
+
+
+outcome_columns = [
+    ("ICT", "ict_dolar", "ict_euro"),
+    ("MER", "mer_dolar", "mer_euro"),
+    ("BLG", "blg_dolar", "blg_euro"),
+    ("SUAT", "suat_dolar", "suat_euro"),
+    ("KOMSU", "komsu_dolar", "komsu_euro"),
+    ("ISLEM", "islem_dolar", "islem_euro"),
+    ("ISLEM R", "islem_r_dolar", "islem_r_euro"),
+    ("KAPI M", "kapı_m_dolar", "kapı_m_euro"),
+    ("Hamal", "hamal_dolar", "hamal_euro"),
+    ("SOFOR VE EKSTR.", "sofor_ve_ekstr_dolar", "sofor_ve_ekstr_euro"),
+    ("INDIRME PLN", "indirme_pln_dolar", "indirme_pln_euro"),
+    ("BUS", "bus_dolar", "bus_euro"),
+    ("MAZOT", "mazot_dolar", "mazot_euro"),
+    ("SAKAL YOL", "sakal_yol_dolar", "sakal_yol_euro"),
+    ("EK MASRAF", "ek_masraf_dolar", "ek_masraf_euro"),
+]
+
+def build_outcome_df(raw_outcomes):
+    columns = [
+        "ID", "Date", "Araç", "Tır Plaka",
+        "ict_dolar", "ict_euro", "mer_dolar", "mer_euro", "blg_dolar", "blg_euro",
+        "suat_dolar", "suat_euro", "komsu_dolar", "komsu_euro", 
+        "islem_dolar", "islem_euro", "islem_r_dolar", "islem_r_euro",
+        "kapı_m_dolar", "kapı_m_euro", "hamal_dolar", "hamal_euro",
+        "sofor_ve_ekstr_dolar", "sofor_ve_ekstr_euro", "indirme_pln_dolar", "indirme_pln_euro",
+        "bus_dolar", "bus_euro", "mazot_dolar", "mazot_euro",
+        "sakal_yol_dolar", "sakal_yol_euro", "ek_masraf_dolar", "ek_masraf_euro",
+        "Açıklama", "Toplam Dolar", "Toplam Euro"
+    ]
+    df = pd.DataFrame(raw_outcomes, columns=columns)
+    for outcol, dol, eur in outcome_columns:
+        df[outcol] = df.apply(lambda row: pretty_currency(row[dol], row[eur]), axis=1)
+    show_cols = ["ID", "Date", "Araç", "Tır Plaka"] + [oc[0] for oc in outcome_columns] + ["Açıklama", "Toplam Dolar", "Toplam Euro"]
+    return df[show_cols]
 
 
 def process_currency_value(value):
@@ -260,6 +306,7 @@ def insert_transactions_batch(transactions_data):
                 INSERT INTO transactions 
                 (date, name, vehicle, kap_number, unit_kg, price, dolar, euro, zl, tl, aciklama)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT ON CONSTRAINT transactions_unique_unique DO NOTHING
             ''', cleaned)
 
             # Profil güncellemeleri
@@ -634,29 +681,34 @@ def fetch_outcomes(date, vehicle, all_dates):
     conn = get_db_connection()
     if conn is None:
         return []
-        
     try:
         with conn.cursor() as c:
             sql = '''
-                SELECT DISTINCT id, date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r, kapı_m, hamal, 
-                sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama, toplam_y, toplam_m
+                SELECT id, date, arac, tir_plaka, 
+                ict_dolar, ict_euro, mer_dolar, mer_euro, blg_dolar, blg_euro,
+                suat_dolar, suat_euro, komsu_dolar, komsu_euro,
+                islem_dolar, islem_euro, islem_r_dolar, islem_r_euro,
+                kapı_m_dolar, kapı_m_euro, hamal_dolar, hamal_euro,
+                sofor_ve_ekstr_dolar, sofor_ve_ekstr_euro, indirme_pln_dolar, indirme_pln_euro,
+                bus_dolar, bus_euro, mazot_dolar, mazot_euro,
+                sakal_yol_dolar, sakal_yol_euro, ek_masraf_dolar, ek_masraf_euro, 
+                aciklama, toplam_dolar, toplam_euro
                 FROM outcomes
             '''
+            where_clause = []
+            params = []
 
-            if all_dates:
-                if vehicle != 'All Vehicles':
-                    sql += ' WHERE arac = %s'
-                    c.execute(sql, (vehicle,))
-                else:
-                    c.execute(sql)
-            else:
-                if vehicle != 'All Vehicles':
-                    sql += ' WHERE date = %s AND arac = %s'
-                    c.execute(sql, (date, vehicle))
-                else:
-                    sql += ' WHERE date = %s'
-                    c.execute(sql, (date,))
+            if not all_dates:
+                where_clause.append('date = %s')
+                params.append(date)
+            if vehicle != 'All Vehicles':
+                where_clause.append('arac = %s')
+                params.append(vehicle)
+            if where_clause:
+                sql += ' WHERE ' + ' AND '.join(where_clause)
 
+            sql += ' ORDER BY date DESC'
+            c.execute(sql, params)
             outcomes = c.fetchall()
         return outcomes
     except Exception as e:
@@ -1153,12 +1205,9 @@ def show_accounting_page():
     try:
         selected_date_str = selected_date.strftime('%Y-%m-%d')
         outcomes = fetch_outcomes(selected_date_str, selected_vehicle, st.session_state.all_dates)
-        df_outcomes = pd.DataFrame(outcomes,
-                                   columns=["ID", "Date", "Araç", "Tır Plaka", "ICT", "MER", "BLG", "SUAT", "KOMSU",
-                                            "ISLEM", "ISLEM R", "KAPI M", "Hamal", "SOFOR VE EKSTR.", "INDIRME PLN",
-                                            "BUS",
-                                            "MAZOT", "SAKAL YOL", "EK MASRAF", "Açıklama", "Total Toplam Y",
-                                            "Total Toplam M"])
+    
+        df_outcomes = build_outcome_df(outcomes)
+
 
         filter_columns = ["Show All", "ICT", "MER", "BLG", "SUAT", "KOMSU", "ISLEM", "ISLEM R", "KAPI M", "Hamal",
                           "SOFOR VE EKSTR.", "INDIRME PLN", "BUS", "MAZOT", "SAKAL YOL", "EK MASRAF", "Açıklama",
