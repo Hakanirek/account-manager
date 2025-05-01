@@ -1244,13 +1244,13 @@ def show_accounting_page():
         if filter_option == "Show All":
             st.write(df_outcomes)
 
-            converted_values_y = df_outcomes["Total Toplam Y"].apply(convert_value)
+            converted_values_y = df_outcomes["Toplam Dolar"]
             total_value_y = converted_values_y.sum()
-            converted_values_m = df_outcomes["Total Toplam M"].apply(convert_value)
+            converted_values_m = df_outcomes["Toplam Euro"]
             total_value_m = converted_values_m.sum()
 
-            st.write(f"Total Y: {total_value_y:.2f}")
-            st.write(f"Total M: {total_value_m:.2f}")
+            st.write(f"Total Dolar: {total :.2f}")
+            st.write(f"Total Euro: {total_value_m:.2f}")
 
         elif filter_option in df_outcomes.columns:
             df_filtered = df_outcomes[["Date", "Araç", filter_option]]
@@ -1495,8 +1495,8 @@ def show_edit_page():
                                    columns=["ID", "Date", "Araç", "Tır Plaka", "ICT", "MER", "BLG", "SUAT", "KOMSU",
                                             "ISLEM", "ISLEM R", "KAPI M", "Hamal", "SOFOR VE EKSTR.", "INDIRME PLN",
                                             "BUS",
-                                            "MAZOT", "SAKAL YOL", "EK MASRAF", "Açıklama", "Total Toplam Y",
-                                            "Total Toplam M"])
+                                            "MAZOT", "SAKAL YOL", "EK MASRAF", "Açıklama", "Toplam Dolar",
+                                            "Toplam Euro"])
         st.dataframe(df_outcomes)
 
         if not df_outcomes.empty:
@@ -1539,7 +1539,7 @@ def show_edit_page():
                                                         "KOMSU", "ISLEM", "ISLEM R", "KAPI M", "Hamal",
                                                         "SOFOR VE EKSTR.",
                                                         "INDIRME PLN", "BUS", "MAZOT", "SAKAL YOL", "EK MASRAF",
-                                                        "Açıklama", "Total Toplam Y", "Total Toplam M"])
+                                                        "Açıklama", "Toplam Dolar", "Toplam Euro"])
                     st.dataframe(df_outcomes)
         else:
             st.warning("No outcomes available for selection.")
