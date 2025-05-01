@@ -1429,22 +1429,22 @@ def show_edit_page():
 
             with st.form("edit_transaction_form"):
                 date = st.date_input("Date", value=pd.to_datetime(transaction_row['Date']))
-                name = st.text_input("Name", value=transaction_row['Name'])
-                vehicle = st.text_input("Vehicle", value=transaction_row['Vehicle'])
-                kap_number = st.text_input("Kap Number", value=transaction_row['Kap-Number'])
-                unit_kg = st.number_input("Unit Kg", value=transaction_row['Unit-Kg'])
-                price = st.number_input("Price", value=transaction_row['Price'])
-                dolar = st.number_input("Dolar", value=transaction_row['Dolar'])
-                euro = st.number_input("Euro", value=transaction_row['Euro'])
-                zl = st.number_input("ZL", value=transaction_row['ZL'])
-                tl = st.number_input("TL", value=transaction_row['T.L'])
-                aciklama = st.text_input("Açıklama", value=transaction_row['Açıklama'])
+                name = st.text_input("Name", value=str(transaction_row['Name']))
+                vehicle = st.text_input("Vehicle", value=str(transaction_row['Vehicle']))
+                kap_number = st.text_input("Kap Number", value=str(transaction_row['Kap-Number']))
+                unit_kg = st.number_input("Unit Kg", value=float(transaction_row['Unit-Kg']))
+                price = st.number_input("Price", value=float(transaction_row['Price']))
+                dolar = st.number_input("Dolar", value=float(transaction_row['Dolar']))
+                euro = st.number_input("Euro", value=float(transaction_row['Euro']))
+                zl = st.number_input("ZL", value=float(transaction_row['ZL']))
+                tl = st.number_input("TL", value=float(transaction_row['T.L']))
+                aciklama = st.text_input("Açıklama", value=str(transaction_row['Açıklama']))
                 submit_btn = st.form_submit_button("Update Transaction")
-
                 if submit_btn:
                     update_transaction(transaction_id, date.strftime("%Y-%m-%d"), name, vehicle, kap_number, unit_kg,
                                        price, dolar, euro, zl, tl, aciklama)
                     st.success("Transaction updated successfully")
+
         else:
             st.warning("No outcomes available for selection.")
 
