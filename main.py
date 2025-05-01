@@ -190,25 +190,37 @@ def setup_database():
     if conn is None:
         return
     
+    
+
+
     try:
         with conn.cursor() as c:
             # Create transactions table
             c.execute('''
-            CREATE TABLE IF NOT EXISTS transactions (
-                id SERIAL PRIMARY KEY,
-                date TEXT,
-                name TEXT,
-                vehicle TEXT,
-                kap_number TEXT,
-                unit_kg REAL,
-                price REAL,
-                dolar REAL,
-                euro REAL,
-                zl REAL,
-                tl REAL,
-                aciklama TEXT
-            )
+                CREATE TABLE IF NOT EXISTS transactions (
+                    id SERIAL PRIMARY KEY,
+                    date TEXT,
+                    name TEXT,
+                    vehicle TEXT,
+                    kap_number TEXT,
+                    unit_kg REAL,
+                    price REAL,
+                    dolar REAL,
+                    euro REAL,
+                    zl REAL,
+                    tl REAL,
+                    aciklama TEXT
+                )
             ''')
+
+            try:
+                c.execute('''
+                    ALTER TABLE transactions 
+                    ADD CONSTRAINT transactions_unique_unique 
+                    UNIQUE (date, name, vehicle, kap_number)
+                ''')
+            except Exception as err:
+                pass
 
             # Create profiles table
             c.execute('''
