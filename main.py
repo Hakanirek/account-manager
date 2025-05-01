@@ -432,6 +432,7 @@ def insert_outcome(date, arac, tir_plaka, ict, mer, blg, suat, komsu, islem, isl
                     %s,           -- aciklama
                     %s, %s        -- toplam_dolar, toplam_euro
                 )
+                ON CONFLICT ON CONSTRAINT outcomes_unique_unique DO NOTHING
             ''', (
                 date, arac, tir_plaka,
                 parsed['ict'][0], parsed['ict'][1],
@@ -1223,7 +1224,7 @@ def show_accounting_page():
 
         filter_columns = ["Show All", "ICT", "MER", "BLG", "SUAT", "KOMSU", "ISLEM", "ISLEM R", "KAPI M", "Hamal",
                           "SOFOR VE EKSTR.", "INDIRME PLN", "BUS", "MAZOT", "SAKAL YOL", "EK MASRAF", "Açıklama",
-                          "Total Toplam Y", "Total Toplam M"]
+                          "Toplam Dolar", "Toplam Euro"]
         st.session_state['filter_option'] = st.selectbox("Select a column to filter", options=filter_columns,
                                                          index=filter_columns.index(
                                                              st.session_state['filter_option']) if st.session_state[
