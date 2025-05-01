@@ -102,6 +102,21 @@ for key in ['filter_option', 'all_dates']:
     if key not in st.session_state:
         st.session_state[key] = None
 
+
+def format_val(d, e):
+    try:
+        d = float(d or 0)
+    except: d = 0
+    try:
+        e = float(e or 0)
+    except: e = 0
+    if e != 0:
+        return f"{e}M"
+    elif d != 0:
+        return f"{d}Y"
+    else:
+        return ""
+
 # Yeni convert_currency_value fonksiyonu
 def convert_currency_value(value):
     """M/Y işaretli değerleri parse eder ve (dolar, euro) tuple döner"""
@@ -1504,44 +1519,39 @@ def show_edit_page():
         if not df_outcomes.empty:
             outcome_id = st.selectbox("Select Outcome ID to Edit", df_outcomes['ID'].tolist())
             outcome_row = df_outcomes[df_outcomes['ID'] == outcome_id].iloc[0]
-
             form_key = f"edit_outcome_form_{outcome_id}"
-
+        
             with st.form(form_key):
                 date = st.date_input("Date", value=pd.to_datetime(outcome_row['Date']))
-                arac = st.text_input("Araç", value=outcome_row['Araç'])
-                tir_plaka = st.text_input("Tır Plaka", value=outcome_row['Tır Plaka'])
-                ict = st.text_input("ICT", value=str(outcome_row['ICT']))
-                mer = st.text_input("MER", value=str(outcome_row['MER']))
-                blg = st.text_input("BLG", value=str(outcome_row['BLG']))
-                suat = st.text_input("SUAT", value=str(outcome_row['SUAT']))
-                komsu = st.text_input("KOMSU", value=str(outcome_row['KOMSU']))
-                islem = st.text_input("ISLEM", value=str(outcome_row['ISLEM']))
-                islem_r = st.text_input("ISLEM R", value=str(outcome_row['ISLEM R']))
-                kapı_m = st.text_input("KAPI M", value=str(outcome_row['KAPI M']))
-                hamal = st.text_input("Hamal", value=str(outcome_row['Hamal']))
-                sofor_ve_ekstr = st.text_input("SOFOR VE EKSTR.", value=str(outcome_row['SOFOR VE EKSTR.']))
-                indirme_pln = st.text_input("INDIRME PLN", value=str(outcome_row['INDIRME PLN']))
-                bus = st.text_input("BUS", value=str(outcome_row['BUS']))
-                mazot = st.text_input("MAZOT", value=str(outcome_row['MAZOT']))
-                sakal_yol = st.text_input("SAKAL YOL", value=str(outcome_row['SAKAL YOL']))
-                ek_masraf = st.text_input("EK MASRAF", value=str(outcome_row['EK MASRAF']))
+                arac = st.text_input("Araç", value=str(outcome_row['Araç']))
+                tir_plaka = st.text_input("Tır Plaka", value=str(outcome_row['Tır Plaka']))
+        
+                ict = st.text_input("ICT", value=format_val(outcome_row['ict_dolar'], outcome_row['ict_euro']))
+                mer = st.text_input("MER", value=format_val(outcome_row['mer_dolar'], outcome_row['mer_euro']))
+                blg = st.text_input("BLG", value=format_val(outcome_row['blg_dolar'], outcome_row['blg_euro']))
+                suat = st.text_input("SUAT", value=format_val(outcome_row['suat_dolar'], outcome_row['suat_euro']))
+                komsu = st.text_input("KOMSU", value=format_val(outcome_row['komsu_dolar'], outcome_row['komsu_euro']))
+                islem = st.text_input("ISLEM", value=format_val(outcome_row['islem_dolar'], outcome_row['islem_euro']))
+                islem_r = st.text_input("ISLEM R", value=format_val(outcome_row['islem_r_dolar'], outcome_row['islem_r_euro']))
+                kapı_m = st.text_input("KAPI M", value=format_val(outcome_row['kapı_m_dolar'], outcome_row['kapı_m_euro']))
+                hamal = st.text_input("Hamal", value=format_val(outcome_row['hamal_dolar'], outcome_row['hamal_euro']))
+                sofor_ve_ekstr = st.text_input("SOFOR VE EKSTR.", value=format_val(outcome_row['sofor_ve_ekstr_dolar'], outcome_row['sofor_ve_ekstr_euro']))
+                indirme_pln = st.text_input("INDIRME PLN", value=format_val(outcome_row['indirme_pln_dolar'], outcome_row['indirme_pln_euro']))
+                bus = st.text_input("BUS", value=format_val(outcome_row['bus_dolar'], outcome_row['bus_euro']))
+                mazot = st.text_input("MAZOT", value=format_val(outcome_row['mazot_dolar'], outcome_row['mazot_euro']))
+                sakal_yol = st.text_input("SAKAL YOL", value=format_val(outcome_row['sakal_yol_dolar'], outcome_row['sakal_yol_euro']))
+                ek_masraf = st.text_input("EK MASRAF", value=format_val(outcome_row['ek_masraf_dolar'], outcome_row['ek_masraf_euro']))
                 aciklama = st.text_input("Açıklama", value=str(outcome_row['Açıklama']))
+        
                 submit_btn = st.form_submit_button("Update Outcome")
-
                 if submit_btn:
-                    update_outcome(outcome_id, date.strftime("%Y-%m-%d"), arac, tir_plaka, ict, mer, blg, suat,
-                                   komsu, islem, islem_r, kapı_m, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot,
-                                   sakal_yol, ek_masraf, aciklama)
+                    update_outcome(
+                        outcome_id, date.strftime("%Y-%m-%d"), arac, tir_plaka, ict, mer, blg, suat, komsu, islem, islem_r,
+                        kapı_m, hamal, sofor_ve_ekstr, indirme_pln, bus, mazot, sakal_yol, ek_masraf, aciklama
+                    )
                     st.success("Outcome updated successfully")
-                    outcomes = fetch_outcomes(selected_date.strftime('%Y-%m-%d'), 'All Vehicles',
-                                              st.session_state.all_dates)
-                    df_outcomes = pd.DataFrame(outcomes,
-                                               columns=["ID", "Date", "Araç", "Tır Plaka", "ICT", "MER", "BLG", "SUAT",
-                                                        "KOMSU", "ISLEM", "ISLEM R", "KAPI M", "Hamal",
-                                                        "SOFOR VE EKSTR.",
-                                                        "INDIRME PLN", "BUS", "MAZOT", "SAKAL YOL", "EK MASRAF",
-                                                        "Açıklama", "Toplam Dolar", "Toplam Euro"])
+                    outcomes = fetch_outcomes(selected_date.strftime('%Y-%m-%d'), 'All Vehicles', st.session_state.all_dates)
+                    df_outcomes = pd.DataFrame(outcomes, columns=outcome_columns_df)
                     st.dataframe(df_outcomes)
         else:
             st.warning("No outcomes available for selection.")
