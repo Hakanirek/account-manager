@@ -1391,8 +1391,6 @@ def show_transfer_page():
 
 def show_edit_page():
     login_kontrol()
-
-    """Show the edit data records page logic."""
     st.title("Edit Data Records")
 
     edit_option = st.radio("Select Data Type to Edit", ("CARİ", "Transactions", "Transfers", "Outcomes"))
